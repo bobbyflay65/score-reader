@@ -340,8 +340,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     // rehearsal/section marks (Intro/A/B/C boxes) default to almost the
     // same height as chord symbols, so the two crowd into each other;
-    // lift the marks clear into their own row above
-    osmd.EngravingRules.RehearsalMarkYOffset = 36;
+    // lift the marks clear into their own row above. They also bypass the
+    // renderer's collision system entirely (unlike tempo marks, which do
+    // reserve their space), so a tall enough offset needs to clear tempo
+    // and coda/segno marks too, not just chord symbols underneath — tested
+    // against several real scores that combine a rehearsal box with a
+    // tempo marking on the same measure.
+    osmd.EngravingRules.RehearsalMarkYOffset = 60;
     applySpacing();
     return osmd;
   }
