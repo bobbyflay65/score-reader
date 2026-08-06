@@ -46,6 +46,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     color: var(--ink);
     min-height: 100vh;
   }
+  /* the score should only ever scroll vertically: kill sideways
+     panning/overscroll at the page level */
+  html, body { overflow-x: hidden; overscroll-behavior-x: none; }
   header {
     position: sticky; top: 0; z-index: 10;
     background: rgba(244,241,234,0.92);
@@ -92,12 +95,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     max-width: 1100px; margin: 20px auto 60px; padding: 0 16px;
     display: none;
   }
+  #sheet-wrap { touch-action: pan-y; }
   #sheet {
     background: var(--card);
     border-radius: 6px;
     box-shadow: 0 2px 16px rgba(40,35,20,0.10);
     padding: 28px 20px;
     min-height: 300px;
+    /* no text-selection loupe on tap-and-hold mid-performance */
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
   #status {
     position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
@@ -118,6 +124,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   body.stage #dropzone.dragover { background: #20262c; }
   #stage[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
   #library h3 { color: var(--ink); font-size: 16px; margin: 26px 0 4px; text-align: left; }
+  #song-search {
+    width: 100%; margin-top: 10px; padding: 10px 12px;
+    font: inherit; font-size: 15px;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--card); color: var(--ink);
+    -webkit-appearance: none;
+  }
+  #song-search:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #song-list li.none { background: none; border: none; cursor: default; color: var(--muted); font-size: 14px; padding: 10px 2px; }
   #song-list { list-style: none; margin-top: 10px; text-align: left; }
   #song-list li {
     display: flex; align-items: center; gap: 8px;
@@ -221,7 +236,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <p>Accepts <strong>.musicxml</strong>, <strong>.xml</strong> or compressed <strong>.mxl</strong> files.<br>
   In Sibelius: <em>File &rarr; Export &rarr; MusicXML</em> to convert your .sib scores.</p>
   <div id="library" style="display:none">
-    <h3>Your songs</h3>
+    <h3 id="library-count">Your songs</h3>
+    <input type="search" id="song-search" placeholder="Search songs…" autocomplete="off">
     <ul id="song-list"></ul>
   </div>
   <p style="margin-top:24px"><button id="import">Add songs to library</button></p>
@@ -853,11 +869,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   function saveSong(song) { dbPut(song).then(refreshLibrary).catch(() => {}); }
 
-  async function refreshLibrary() {
-    let songs = [];
-    try { songs = await dbAll(); } catch (e) { return; }
-    songs.sort((a, b) => a.title.localeCompare(b.title));
-    $("library").style.display = songs.length ? "" : "none";
+  let allSongs = [];
+
+  async function openSong(name) {
+    try {
+      showStatus("Loading…");
+      const song = await dbGet(name);
+      await loadScoreFromText(song.text, song.name);
+    } catch (e) {
+      showStatus("Could not open: " + e.message, true);
+    }
+  }
+
+  function renderSongList() {
+    const q = $("song-search").value.trim().toLowerCase();
+    const songs = q ? allSongs.filter(s => s.title.toLowerCase().includes(q)) : allSongs;
     const ul = $("song-list");
     ul.innerHTML = "";
     for (const s of songs) {
@@ -876,19 +902,34 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         refreshLibrary();
       });
       li.append(t, del);
-      li.addEventListener("click", async () => {
-        try {
-          showStatus("Loading…");
-          const song = await dbGet(s.name);
-          await loadScoreFromText(song.text, song.name);
-        } catch (e) {
-          showStatus("Could not open: " + e.message, true);
-        }
-      });
+      li.addEventListener("click", () => openSong(s.name));
+      ul.appendChild(li);
+    }
+    if (!songs.length && q) {
+      const li = document.createElement("li");
+      li.className = "none";
+      li.textContent = "No songs match “" + $("song-search").value.trim() + "”";
       ul.appendChild(li);
     }
   }
+
+  async function refreshLibrary() {
+    try { allSongs = await dbAll(); } catch (e) { return; }
+    allSongs.sort((a, b) => a.title.localeCompare(b.title));
+    $("library").style.display = allSongs.length ? "" : "none";
+    $("library-count").textContent = "Your songs (" + allSongs.length + ")";
+    renderSongList();
+  }
   refreshLibrary();
+
+  $("song-search").addEventListener("input", renderSongList);
+  // Enter opens the top match — type a few letters, hit go, you're playing
+  $("song-search").addEventListener("keydown", e => {
+    if (e.key !== "Enter") return;
+    const q = $("song-search").value.trim().toLowerCase();
+    const hit = allSongs.find(s => s.title.toLowerCase().includes(q));
+    if (q && hit) openSong(hit.name);
+  });
 
   $("library-btn").addEventListener("click", () => {
     refreshLibrary();
