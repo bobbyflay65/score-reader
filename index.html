@@ -76,6 +76,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   button.step { padding: 6px 12px; font-weight: 700; }
   input[type=range] { width: 110px; accent-color: var(--accent); }
   .zoom-pct { font-size: 12px; color: var(--muted); min-width: 34px; text-align: right; }
+  .secondary { display: contents; }
+  #more { display: none; }
   #dropzone {
     max-width: 720px; margin: 12vh auto; padding: 60px 40px;
     border: 2px dashed #c9c2b2; border-radius: 16px;
@@ -99,13 +101,32 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   #status {
     position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
-    background: var(--ink); color: #fff; font-size: 13px;
+    background: #22252a; color: #fff; font-size: 13px;
     padding: 8px 16px; border-radius: 20px;
     opacity: 0; pointer-events: none; transition: opacity .25s;
     max-width: 90vw;
   }
   #status.show { opacity: 0.92; }
   #status.error { background: #a03030; }
+  /* stage mode: dark chrome, and the rendered score is color-inverted so
+     it reads as light-on-dark in dark venues */
+  body.stage { --paper: #15171a; --card: #1e2126; --ink: #e8e6e1; --muted: #9aa0a8; --border: #343941; }
+  body.stage header { background: rgba(21,23,26,0.92); }
+  body.stage #sheet { box-shadow: 0 2px 16px rgba(0,0,0,0.5); }
+  body.stage #sheet svg { filter: invert(0.92) hue-rotate(180deg); }
+  body.stage #dropzone { border-color: #3a3f47; }
+  body.stage #dropzone.dragover { background: #20262c; }
+  #stage[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #library h3 { color: var(--ink); font-size: 16px; margin: 26px 0 4px; text-align: left; }
+  #song-list { list-style: none; margin-top: 10px; text-align: left; }
+  #song-list li {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 8px; cursor: pointer;
+  }
+  #song-list li:hover { border-color: var(--accent); }
+  #song-list .t { flex: 1; font-weight: 600; font-size: 15px; color: var(--ink); }
+  #song-list .del { border: none; background: none; color: var(--muted); font-size: 16px; padding: 4px 8px; cursor: pointer; }
   /* portrait / narrow screens: tighter chrome, touch-sized controls */
   @media (max-width: 640px) {
     header { padding: 8px 10px; gap: 6px 8px; }
@@ -117,6 +138,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     select, button { padding: 10px 12px; font-size: 14px; }
     button.step { padding: 10px 16px; }
     input[type=range] { width: 84px; }
+    /* rarely-used controls live behind the ⋯ button so the header stays
+       out of the music's way */
+    #more { display: inline-block; padding: 10px 14px; }
+    .secondary { display: none; }
+    header.expanded .secondary {
+      display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+      width: 100%; background: var(--card);
+      border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+    }
+    header.expanded .secondary .ctl { justify-content: space-between; }
+    header.expanded .secondary .ctl label { display: inline; }
     #sheet-wrap { padding: 0 6px; margin: 10px auto 40px; }
     #sheet { padding: 14px 6px; border-radius: 4px; }
     #dropzone { margin: 8vh 16px; padding: 40px 20px; }
@@ -125,7 +157,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     header, #status { display: none !important; }
     body { background: #fff; }
     #sheet-wrap { max-width: none; margin: 0; padding: 0; }
-    #sheet { box-shadow: none; padding: 0; border-radius: 0; }
+    #sheet { box-shadow: none; padding: 0; border-radius: 0; background: #fff; }
+    #sheet svg { filter: none !important; }
   }
 </style>
 </head>
@@ -144,36 +177,42 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <select id="key-select" disabled></select>
       <button class="step" id="up" title="Up a semitone">♯</button>
     </div>
-    <div class="ctl" id="pitch-ctl" style="display:none">
-      <label for="pitch-mode">Pitch</label>
-      <select id="pitch-mode">
-        <option value="concert" selected>Concert</option>
-        <option value="written">As written</option>
-      </select>
-    </div>
-    <div class="ctl">
-      <label for="spacing">Spacing</label>
-      <select id="spacing">
-        <option value="compact">Compact</option>
-        <option value="normal" selected>Normal</option>
-        <option value="roomy">Roomy</option>
-      </select>
-    </div>
-    <div class="ctl">
-      <label for="layout">Layout</label>
-      <select id="layout">
-        <option value="grouped" selected>2–4 bars/row</option>
-        <option value="auto">Fit width</option>
-      </select>
+    <div class="secondary" id="secondary">
+      <div class="ctl" id="pitch-ctl" style="display:none">
+        <label for="pitch-mode">Pitch</label>
+        <select id="pitch-mode">
+          <option value="concert" selected>Concert</option>
+          <option value="written">As written</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <label for="spacing">Spacing</label>
+        <select id="spacing">
+          <option value="compact">Compact</option>
+          <option value="normal" selected>Normal</option>
+          <option value="roomy">Roomy</option>
+        </select>
+      </div>
+      <div class="ctl">
+        <label for="layout">Layout</label>
+        <select id="layout">
+          <option value="grouped" selected>2–4 bars/row</option>
+          <option value="auto">Fit width</option>
+        </select>
+      </div>
+      <button id="stage" aria-pressed="false" title="Dark mode for dark venues">Stage</button>
+      <button id="print">Print</button>
     </div>
     <div class="ctl">
       <label for="zoom">Zoom</label>
-      <input type="range" id="zoom" min="0.5" max="1.6" step="0.05" value="0.9">
+      <input type="range" id="zoom" min="0.5" max="1.6" step="0.01" value="0.9">
       <span class="zoom-pct" id="zoom-pct">90%</span>
     </div>
-    <button id="print">Print</button>
+    <button id="more" aria-expanded="false" title="More controls">⋯</button>
+    <button id="library-btn">Songs</button>
     <button class="primary" id="open">Open file</button>
     <input type="file" id="file-input" accept=".musicxml,.xml,.mxl" hidden>
+    <input type="file" id="import-input" accept=".musicxml,.xml,.mxl" multiple hidden>
   </div>
 </header>
 
@@ -181,7 +220,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <h2>Drop a score here</h2>
   <p>Accepts <strong>.musicxml</strong>, <strong>.xml</strong> or compressed <strong>.mxl</strong> files.<br>
   In Sibelius: <em>File &rarr; Export &rarr; MusicXML</em> to convert your .sib scores.</p>
-  <p class="hint">Everything runs in your browser &mdash; your scores never leave this computer.</p>
+  <div id="library" style="display:none">
+    <h3>Your songs</h3>
+    <ul id="song-list"></ul>
+  </div>
+  <p style="margin-top:24px"><button id="import">Add songs to library</button></p>
+  <p class="hint">Pick as many files as you like &mdash; e.g. select everything in your scores folder at once.
+  They're stored in the app, so the whole library works offline.</p>
 </div>
 
 <div id="sheet-wrap"><div id="sheet"></div></div>
@@ -332,9 +377,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // read at a glance and dense melodic bars get room to breathe. Density is
   // just a count of non-rest notes per measure, summed across all parts (so
   // a busy piano LH still shortens the row even if the melody stays simple)
-  function computeBarBreaks(doc) {
+  function computeBarBreaks(doc, maxGroup) {
     const parts = [...doc.querySelectorAll("part")];
-    if (!parts.length) return new Set();
+    if (!parts.length) return { maxGroup, set: new Set() };
     const measureCount = parts[0].querySelectorAll("measure").length;
     const density = [];
     for (let i = 0; i < measureCount; i++) {
@@ -351,14 +396,23 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const breaks = new Set();
     let i = 0;
     while (i < measureCount) {
-      const groupSize = (i + 4 <= measureCount && density.slice(i, i + 4).every(c => c <= DENSE))
+      const groupSize = (maxGroup === 4 && i + 4 <= measureCount && density.slice(i, i + 4).every(c => c <= DENSE))
         ? 4
         : Math.min(2, measureCount - i);
       if (i > 0) breaks.add(i);
       i += groupSize;
     }
-    return breaks;
+    return { maxGroup, set: breaks };
   }
+
+  // rows of 4 only make sense when 4 bars actually fit: on a narrow screen
+  // (or zoomed way in) the renderer would wrap the group anyway, leaving a
+  // lone bar stretched across the whole width — so drop to pairs instead
+  function desiredMaxGroup() {
+    const w = $("sheet").clientWidth || window.innerWidth;
+    return (w / parseFloat($("zoom").value)) >= 700 ? 4 : 2;
+  }
+  let lastMaxGroup = null;
 
   // strips whatever line breaks Sibelius exported and inserts ours instead,
   // on every part (OSMD may consult any of them for the system layout)
@@ -444,7 +498,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     // once shown at concert pitch the instrument transposition no longer applies
     if (concert && instChroma) doc.querySelectorAll("transpose").forEach(el => el.remove());
     const grouped = $("layout").value === "grouped";
-    if (grouped && barBreaks) applyBarBreaksToDoc(doc, barBreaks);
+    if (grouped) {
+      const g = desiredMaxGroup();
+      if (!barBreaks || barBreaks.maxGroup !== g) barBreaks = computeBarBreaks(originalDoc, g);
+      applyBarBreaksToDoc(doc, barBreaks.set);
+      lastMaxGroup = g;
+    }
     // serialize the root element only: cloned Documents lose the XML
     // declaration, which the renderer requires to recognize the format
     const xml = '<?xml version="1.0" encoding="UTF-8"?>' +
@@ -528,7 +587,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       w.replaceWith(reh);
     });
 
-    barBreaks = computeBarBreaks(doc);
+    barBreaks = null; // recomputed on render for the current screen width/zoom
     originalDoc = doc;
     currentSemis = 0;
     const fEl = doc.querySelector("key > fifths");
@@ -556,6 +615,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     $("sheet-wrap").style.display = "block";
     buildKeySelect();
     await renderCurrent();
+    saveSong({ name: filename, title: songName, text: text, added: Date.now() });
+    keepAwake();
     showStatus(instChroma
       ? "Loaded “" + songName + "” — " + instName + " part, showing concert pitch"
       : "Loaded “" + songName + "”");
@@ -641,11 +702,85 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   $("up").addEventListener("click", () => setSemis(currentSemis + 1));
   $("down").addEventListener("click", () => setSemis(currentSemis - 1));
 
-  $("zoom").addEventListener("input", () => {
-    updateZoomPct();
+  // re-engraving the score is expensive, so while the slider is being
+  // dragged only the % readout tracks live; the actual re-render waits
+  // until the finger pauses
+  let zoomTimer = null;
+  function applyZoom() {
     if (!osmd || !originalDoc) return;
     osmd.Zoom = parseFloat($("zoom").value);
-    osmd.render();
+    // zooming can change how many bars fit per row; re-group if so
+    if ($("layout").value === "grouped" && desiredMaxGroup() !== lastMaxGroup) renderCurrent();
+    else osmd.render();
+  }
+  $("zoom").addEventListener("input", () => {
+    updateZoomPct();
+    clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(applyZoom, 160);
+  });
+
+  // pinch-to-zoom on the score itself (instead of the browser zooming the
+  // whole page): a cheap CSS scale previews the gesture live, then the real
+  // re-render happens once the fingers lift
+  const wrap = $("sheet-wrap");
+  const sheetEl = $("sheet");
+  const clampZoom = z => Math.max(0.5, Math.min(1.6, z));
+  let pinchBase = null;
+  function pinchPreview(z) {
+    $("zoom").value = String(z);
+    updateZoomPct();
+    sheetEl.style.transformOrigin = "50% 0";
+    sheetEl.style.transform = "scale(" + (z / pinchBase) + ")";
+  }
+  function pinchEnd() {
+    sheetEl.style.transform = "";
+    pinchBase = null;
+    applyZoom();
+  }
+  if ("ongesturestart" in window) { // iOS/iPadOS Safari
+    wrap.addEventListener("gesturestart", e => {
+      if (!originalDoc) return;
+      e.preventDefault();
+      pinchBase = parseFloat($("zoom").value);
+    });
+    wrap.addEventListener("gesturechange", e => {
+      if (pinchBase === null) return;
+      e.preventDefault();
+      pinchPreview(clampZoom(pinchBase * e.scale));
+    });
+    wrap.addEventListener("gestureend", e => {
+      if (pinchBase === null) return;
+      e.preventDefault();
+      pinchEnd();
+    });
+  } else {
+    let startDist = 0;
+    const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    wrap.addEventListener("touchstart", e => {
+      if (e.touches.length === 2 && originalDoc) {
+        startDist = dist(e.touches);
+        pinchBase = parseFloat($("zoom").value);
+      }
+    }, { passive: true });
+    wrap.addEventListener("touchmove", e => {
+      if (pinchBase !== null && e.touches.length === 2) {
+        e.preventDefault();
+        pinchPreview(clampZoom(pinchBase * dist(e.touches) / startDist));
+      }
+    }, { passive: false });
+    wrap.addEventListener("touchend", () => {
+      if (pinchBase !== null) pinchEnd();
+    });
+  }
+
+  // rotating the device (or resizing the window) can change how many bars
+  // fit per row too
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (originalDoc && $("layout").value === "grouped" && desiredMaxGroup() !== lastMaxGroup) renderCurrent();
+    }, 250);
   });
 
   $("spacing").addEventListener("change", () => {
@@ -660,6 +795,131 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   });
 
   $("print").addEventListener("click", () => window.print());
+
+  // keep the screen awake while a score is up, so the display doesn't
+  // sleep mid-song; the lock is silently dropped by the OS when the tab is
+  // hidden, so re-grab it whenever the tab comes back
+  let wakeLock = null;
+  async function keepAwake() {
+    if (!("wakeLock" in navigator)) return;
+    try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && originalDoc) keepAwake();
+  });
+
+  const stageBtn = $("stage");
+  function setStage(on) {
+    document.body.classList.toggle("stage", on);
+    stageBtn.setAttribute("aria-pressed", String(on));
+    try { localStorage.setItem("stageMode", on ? "1" : ""); } catch (e) {}
+  }
+  stageBtn.addEventListener("click", () => setStage(!document.body.classList.contains("stage")));
+  try { if (localStorage.getItem("stageMode")) setStage(true); } catch (e) {}
+
+  $("more").addEventListener("click", () => {
+    const open = document.querySelector("header").classList.toggle("expanded");
+    $("more").setAttribute("aria-expanded", String(open));
+  });
+
+  // ---------- song library ----------
+  // every score opened (or bulk-imported) is copied into the browser's own
+  // storage, so the library is one tap per song and fully offline. A web
+  // app can't watch a live folder (iCloud or otherwise) — the OS forbids
+  // it — so newly added charts come in via re-running "Add songs".
+
+  let dbPromise = null;
+  function getDb() {
+    if (!window.indexedDB) return Promise.reject(new Error("storage unavailable"));
+    if (!dbPromise) dbPromise = new Promise((resolve, reject) => {
+      const rq = indexedDB.open("score-reader", 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore("songs", { keyPath: "name" });
+      rq.onsuccess = () => resolve(rq.result);
+      rq.onerror = () => reject(rq.error);
+    });
+    return dbPromise;
+  }
+  function dbOp(mode, fn) {
+    return getDb().then(db => new Promise((resolve, reject) => {
+      const rq = fn(db.transaction("songs", mode).objectStore("songs"));
+      rq.onsuccess = () => resolve(rq.result);
+      rq.onerror = () => reject(rq.error);
+    }));
+  }
+  const dbPut = song => dbOp("readwrite", s => s.put(song));
+  const dbGet = name => dbOp("readonly", s => s.get(name));
+  const dbDelete = name => dbOp("readwrite", s => s.delete(name));
+  const dbAll = () => dbOp("readonly", s => s.getAll());
+
+  function saveSong(song) { dbPut(song).then(refreshLibrary).catch(() => {}); }
+
+  async function refreshLibrary() {
+    let songs = [];
+    try { songs = await dbAll(); } catch (e) { return; }
+    songs.sort((a, b) => a.title.localeCompare(b.title));
+    $("library").style.display = songs.length ? "" : "none";
+    const ul = $("song-list");
+    ul.innerHTML = "";
+    for (const s of songs) {
+      const li = document.createElement("li");
+      const t = document.createElement("span");
+      t.className = "t";
+      t.textContent = s.title;
+      const del = document.createElement("button");
+      del.className = "del";
+      del.textContent = "✕";
+      del.title = "Remove from library";
+      del.addEventListener("click", async ev => {
+        ev.stopPropagation();
+        if (!confirm("Remove “" + s.title + "” from the library?")) return;
+        await dbDelete(s.name);
+        refreshLibrary();
+      });
+      li.append(t, del);
+      li.addEventListener("click", async () => {
+        try {
+          showStatus("Loading…");
+          const song = await dbGet(s.name);
+          await loadScoreFromText(song.text, song.name);
+        } catch (e) {
+          showStatus("Could not open: " + e.message, true);
+        }
+      });
+      ul.appendChild(li);
+    }
+  }
+  refreshLibrary();
+
+  $("library-btn").addEventListener("click", () => {
+    refreshLibrary();
+    $("sheet-wrap").style.display = "none";
+    $("dropzone").style.display = "block";
+    window.scrollTo(0, 0);
+  });
+
+  $("import").addEventListener("click", () => $("import-input").click());
+  $("import-input").addEventListener("change", async e => {
+    const files = [...e.target.files];
+    e.target.value = "";
+    if (!files.length) return;
+    showStatus("Importing…");
+    let ok = 0, bad = 0;
+    for (const f of files) {
+      try {
+        const text = /\.mxl$/i.test(f.name)
+          ? await extractMxl(await f.arrayBuffer())
+          : await f.text();
+        const doc = new DOMParser().parseFromString(text, "application/xml");
+        if (doc.querySelector("parsererror") || !doc.querySelector("part")) throw new Error();
+        const t = doc.querySelector("work > work-title") || doc.querySelector("movement-title");
+        const title = (t && t.textContent.trim()) || f.name.replace(/\.(musicxml|xml|mxl)$/i, "");
+        await dbPut({ name: f.name, title: title, text: text, added: Date.now() });
+        ok++;
+      } catch (err) { bad++; }
+    }
+    await refreshLibrary();
+    showStatus("Added " + ok + " song" + (ok === 1 ? "" : "s") + (bad ? " · " + bad + " file" + (bad === 1 ? "" : "s") + " skipped" : ""), !ok);
+  });
 
   // registers the offline cache; harmless no-op when served from claude.ai
   // (no service-worker.js there) or over file://, where SW isn't available
