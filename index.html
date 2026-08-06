@@ -338,6 +338,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       osmd.EngravingRules.PageLeftMargin = 2;
       osmd.EngravingRules.PageRightMargin = 2;
     }
+    // rehearsal/section marks (Intro/A/B/C boxes) default to almost the
+    // same height as chord symbols, so the two crowd into each other;
+    // lift the marks clear into their own row above
+    osmd.EngravingRules.RehearsalMarkYOffset = 36;
     applySpacing();
     return osmd;
   }
