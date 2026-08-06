@@ -159,6 +159,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       </select>
     </div>
     <div class="ctl">
+      <label for="layout">Layout</label>
+      <select id="layout">
+        <option value="grouped" selected>2–4 bars/row</option>
+        <option value="auto">Fit width</option>
+      </select>
+    </div>
+    <div class="ctl">
       <label for="zoom">Zoom</label>
       <input type="range" id="zoom" min="0.5" max="1.6" step="0.05" value="0.9">
     </div>
@@ -201,6 +208,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   let instName = "";
   let concert = true;       // show concert pitch for transposing instruments
   let songName = "";
+  let barBreaks = null;     // cached Set of measure indices that start a new row, for "2-4 bars/row" layout
 
   const $ = id => document.getElementById(id);
   const statusEl = $("status");
@@ -315,6 +323,63 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     return doc;
   }
 
+  // ---------- adaptive bars-per-row layout ----------
+
+  // groups measures into rows of 4 (or 2 wherever any bar in the group of 4
+  // would be too busy to fit comfortably) so simple slash-chord stretches
+  // read at a glance and dense melodic bars get room to breathe. Density is
+  // just a count of non-rest notes per measure, summed across all parts (so
+  // a busy piano LH still shortens the row even if the melody stays simple)
+  function computeBarBreaks(doc) {
+    const parts = [...doc.querySelectorAll("part")];
+    if (!parts.length) return new Set();
+    const measureCount = parts[0].querySelectorAll("measure").length;
+    const density = [];
+    for (let i = 0; i < measureCount; i++) {
+      let count = 0;
+      for (const part of parts) {
+        const m = part.querySelectorAll("measure")[i];
+        if (!m) continue;
+        count += [...m.querySelectorAll("note")]
+          .filter(n => ![...n.children].some(c => c.tagName === "rest")).length;
+      }
+      density.push(count);
+    }
+    const DENSE = 4; // more note-attacks than this in a bar reads as "busy"
+    const breaks = new Set();
+    let i = 0;
+    while (i < measureCount) {
+      const groupSize = (i + 4 <= measureCount && density.slice(i, i + 4).every(c => c <= DENSE))
+        ? 4
+        : Math.min(2, measureCount - i);
+      if (i > 0) breaks.add(i);
+      i += groupSize;
+    }
+    return breaks;
+  }
+
+  // strips whatever line breaks Sibelius exported and inserts ours instead,
+  // on every part (OSMD may consult any of them for the system layout)
+  function applyBarBreaksToDoc(doc, breaks) {
+    doc.querySelectorAll("print").forEach(p => {
+      p.removeAttribute("new-system");
+      p.removeAttribute("new-page");
+    });
+    doc.querySelectorAll("part").forEach(part => {
+      const measures = part.querySelectorAll("measure");
+      breaks.forEach(idx => {
+        const m = measures[idx];
+        if (!m) return;
+        let print = m.querySelector(":scope > print");
+        if (!print) {
+          print = doc.createElement("print");
+          m.insertBefore(print, m.firstChild);
+        }
+        print.setAttribute("new-system", "yes");
+      });
+    });
+  }
+
   // ---------- rendering ----------
 
   // narrow (portrait phone/tablet) screens get a smaller starting zoom
@@ -343,10 +408,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     // lift the marks clear into their own row above. They also bypass the
     // renderer's collision system entirely (unlike tempo marks, which do
     // reserve their space), so a tall enough offset needs to clear tempo
-    // and coda/segno marks too, not just chord symbols underneath — tested
-    // against several real scores that combine a rehearsal box with a
-    // tempo marking on the same measure.
-    osmd.EngravingRules.RehearsalMarkYOffset = 60;
+    // and coda/segno marks too, not just chord symbols underneath. But
+    // since the renderer doesn't reserve extra row-to-row space for a
+    // manually-placed mark either, raising the offset alone just moves the
+    // collision to the row above once the offset is tall enough to clear
+    // tempo/coda marks — so the row gap itself also needs widening to give
+    // the lifted mark somewhere to sit. Both tuned empirically against
+    // seven real scores with a bounding-box collision check (not just by
+    // eye) until zero collisions remained in either direction.
+    osmd.EngravingRules.RehearsalMarkYOffset = 58;
+    osmd.EngravingRules.MinimumDistanceBetweenSystems = 12;
+    osmd.EngravingRules.MinSkyBottomDistBetweenSystems = 10;
     applySpacing();
     return osmd;
   }
@@ -365,11 +437,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const doc = transposeDoc(originalDoc.cloneNode(true), semis);
     // once shown at concert pitch the instrument transposition no longer applies
     if (concert && instChroma) doc.querySelectorAll("transpose").forEach(el => el.remove());
+    const grouped = $("layout").value === "grouped";
+    if (grouped && barBreaks) applyBarBreaksToDoc(doc, barBreaks);
     // serialize the root element only: cloned Documents lose the XML
     // declaration, which the renderer requires to recognize the format
     const xml = '<?xml version="1.0" encoding="UTF-8"?>' +
       new XMLSerializer().serializeToString(doc.documentElement);
     const o = ensureOsmd();
+    o.EngravingRules.NewSystemAtXMLNewSystemAttribute = grouped;
     await o.load(xml);
     o.Zoom = parseFloat($("zoom").value);
     o.render();
@@ -447,6 +522,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       w.replaceWith(reh);
     });
 
+    barBreaks = computeBarBreaks(doc);
     originalDoc = doc;
     currentSemis = 0;
     const fEl = doc.querySelector("key > fifths");
@@ -568,6 +644,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   $("spacing").addEventListener("change", () => {
     if (!osmd || !originalDoc) return;
     applySpacing();
+    renderCurrent();
+  });
+
+  $("layout").addEventListener("change", () => {
+    if (!originalDoc) return;
     renderCurrent();
   });
 
