@@ -75,6 +75,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   button.primary:hover { background: var(--accent-dark); }
   button.step { padding: 6px 12px; font-weight: 700; }
   input[type=range] { width: 110px; accent-color: var(--accent); }
+  .zoom-pct { font-size: 12px; color: var(--muted); min-width: 34px; text-align: right; }
   #dropzone {
     max-width: 720px; margin: 12vh auto; padding: 60px 40px;
     border: 2px dashed #c9c2b2; border-radius: 16px;
@@ -168,6 +169,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <div class="ctl">
       <label for="zoom">Zoom</label>
       <input type="range" id="zoom" min="0.5" max="1.6" step="0.05" value="0.9">
+      <span class="zoom-pct" id="zoom-pct">90%</span>
     </div>
     <button id="print">Print</button>
     <button class="primary" id="open">Open file</button>
@@ -386,6 +388,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // and slimmer page margins so more bars fit per line
   const isNarrow = () => window.innerWidth <= 640;
   if (isNarrow()) $("zoom").value = "0.7";
+  const updateZoomPct = () => {
+    $("zoom-pct").textContent = Math.round(parseFloat($("zoom").value) * 100) + "%";
+  };
+  updateZoomPct();
 
   function ensureOsmd() {
     if (osmd) return osmd;
@@ -636,6 +642,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   $("down").addEventListener("click", () => setSemis(currentSemis - 1));
 
   $("zoom").addEventListener("input", () => {
+    updateZoomPct();
     if (!osmd || !originalDoc) return;
     osmd.Zoom = parseFloat($("zoom").value);
     osmd.render();
