@@ -944,7 +944,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     e.target.value = "";
     if (!files.length) return;
     showStatus("Importing…");
-    let ok = 0, bad = 0;
+    let added = 0, updated = 0, bad = 0;
     for (const f of files) {
       try {
         const text = /\.mxl$/i.test(f.name)
@@ -954,12 +954,20 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if (doc.querySelector("parsererror") || !doc.querySelector("part")) throw new Error();
         const t = doc.querySelector("work > work-title") || doc.querySelector("movement-title");
         const title = (t && t.textContent.trim()) || f.name.replace(/\.(musicxml|xml|mxl)$/i, "");
+        // same filename = same song re-imported (e.g. re-exported from
+        // Sibelius after an edit); overwrite in place rather than duplicate
+        const existing = await dbGet(f.name);
         await dbPut({ name: f.name, title: title, text: text, added: Date.now() });
-        ok++;
+        if (existing) updated++; else added++;
       } catch (err) { bad++; }
     }
     await refreshLibrary();
-    showStatus("Added " + ok + " song" + (ok === 1 ? "" : "s") + (bad ? " · " + bad + " file" + (bad === 1 ? "" : "s") + " skipped" : ""), !ok);
+    const parts = [];
+    if (added) parts.push(added + " new");
+    if (updated) parts.push(updated + " updated");
+    if (!parts.length) parts.push("nothing new");
+    if (bad) parts.push(bad + " file" + (bad === 1 ? "" : "s") + " skipped");
+    showStatus(parts.join(" · "), !added && !updated);
   });
 
   // registers the offline cache; harmless no-op when served from claude.ai
