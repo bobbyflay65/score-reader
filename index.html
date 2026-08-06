@@ -422,6 +422,22 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       words.slice(1).forEach(w => w.remove());
     });
 
+    // section markers (Intro/A/B/C…) that were boxed by hand in Sibelius,
+    // rather than made with its dedicated Rehearsal Mark tool, export as
+    // plain <words enclosure="..."> instead of <rehearsal>. The renderer
+    // only draws a box — and gives the mark its own placement instead of
+    // running it into neighboring text — for real <rehearsal> elements, so
+    // promote any enclosed word to one. It also only recognizes
+    // enclosure="square" (not e.g. Sibelius's "rectangle"), so normalize
+    // the shape too; visually near-identical for short marks like these.
+    doc.querySelectorAll("words[enclosure]").forEach(w => {
+      const reh = doc.createElement("rehearsal");
+      for (const attr of w.attributes) reh.setAttribute(attr.name, attr.value);
+      reh.setAttribute("enclosure", "square");
+      reh.textContent = w.textContent;
+      w.replaceWith(reh);
+    });
+
     originalDoc = doc;
     currentSemis = 0;
     const fEl = doc.querySelector("key > fifths");
