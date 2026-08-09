@@ -1289,7 +1289,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   // page-turn footpedals typically send plain ArrowUp/ArrowDown keystrokes;
   // the browser's default is a small ~40px nudge, too fine for a foot tap
-  // mid-song. Scroll a quarter of the viewport per press instead. Skipped
+  // mid-song. Scroll half the viewport per press instead. Skipped
   // while focus is in a text field or the zoom slider so those keep their
   // normal arrow-key behavior.
   window.addEventListener("keydown", e => {
@@ -1299,7 +1299,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     e.preventDefault();
     // plain two-arg form so the CSS scroll-behavior above governs the
     // animation - iOS Safari is inconsistent about the options-object form
-    window.scrollBy(0, window.innerHeight * 0.25 * (e.key === "ArrowUp" ? -1 : 1));
+    window.scrollBy(0, window.innerHeight * 0.5 * (e.key === "ArrowUp" ? -1 : 1));
   });
 
   // hide the header while scrolling down; bring it back on scroll up
