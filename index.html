@@ -732,6 +732,121 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
   }
 
+  // Same underlying problem as splitOffsetHarmonyRests above, but a
+  // different Sibelius idiom: instead of an <offset> child, a second chord
+  // change over a sustained rest is placed by <backup>-ing part way into
+  // the rest, dropping the <harmony>, then <forward>-ing back out. OSMD's
+  // parser crashes outright on this shape (TypeError reading
+  // 'parentVoiceEntry') because the harmony has no note sitting at that
+  // exact timestamp to attach to. Fix: replay the measure's cursor
+  // (notes/rests advance it, backup/forward move it directly) to find each
+  // harmony's true timestamp, then split whichever rest spans that
+  // timestamp into two, exactly as above - just fed by simulated position
+  // instead of an explicit offset value. Only single-voice, chord-free
+  // measures are touched; anything else is left alone rather than risk
+  // reordering real multi-voice content.
+  function splitBackupForwardHarmonyRests(doc) {
+    doc.querySelectorAll("part").forEach(part => {
+      let divs = 1;
+      [...part.children].forEach(measure => {
+        if (measure.tagName !== "measure") return;
+        const divEl = measure.querySelector(":scope > attributes > divisions");
+        if (divEl) divs = parseInt(divEl.textContent, 10) || divs;
+
+        const children = [...measure.children];
+        if (!children.some(c => c.tagName === "backup") || !children.some(c => c.tagName === "harmony")) return;
+
+        let cursor = 0;
+        const items = [];
+        let bail = false;
+        for (const c of children) {
+          if (c.tagName === "note") {
+            if (c.querySelector(":scope > chord")) { items.push({ type: "other", el: c }); continue; }
+            const voiceEl = c.querySelector(":scope > voice");
+            if ((voiceEl ? voiceEl.textContent.trim() : "1") !== "1") { bail = true; break; }
+            const durEl = c.querySelector(":scope > duration");
+            const dur = durEl ? parseInt(durEl.textContent, 10) : 0;
+            const start = cursor;
+            cursor += dur;
+            items.push({ type: "note", el: c, start, end: cursor, isRest: !!c.querySelector(":scope > rest") });
+          } else if (c.tagName === "backup") {
+            const durEl = c.querySelector(":scope > duration");
+            cursor -= durEl ? parseInt(durEl.textContent, 10) : 0;
+          } else if (c.tagName === "forward") {
+            const durEl = c.querySelector(":scope > duration");
+            cursor += durEl ? parseInt(durEl.textContent, 10) : 0;
+          } else if (c.tagName === "harmony") {
+            items.push({ type: "harmony", el: c, ts: cursor });
+          } else {
+            items.push({ type: "other", el: c });
+          }
+        }
+        if (bail) return;
+
+        const notes = items.filter(it => it.type === "note");
+        const harmonies = items.filter(it => it.type === "harmony");
+        if (!harmonies.length) return;
+        const misaligned = harmonies.filter(h => !notes.some(n => n.start === h.ts));
+        if (!misaligned.length) return;
+        // a misaligned harmony must land inside some note's span to be handled at all;
+        // if it lands inside a rest, split the rest around it (exact placement); if it
+        // lands inside a real note, don't touch the note's pitch/tie/beam data - just
+        // relocate the harmony to that note's start (same beat, near enough, and safe)
+        const allSafe = misaligned.every(h => notes.some(n => h.ts > n.start && h.ts < n.end));
+        if (!allSafe) return;
+        misaligned.forEach(h => {
+          const n = notes.find(n => h.ts > n.start && h.ts < n.end);
+          if (!n.isRest) h.ts = n.start;
+        });
+
+        const newNotes = [];
+        let splitFailed = false;
+        for (const n of notes) {
+          if (!n.isRest) { newNotes.push(n); continue; }
+          const innerTs = harmonies.filter(h => h.ts > n.start && h.ts < n.end).map(h => h.ts).sort((a, b) => a - b);
+          if (!innerTs.length) { newNotes.push(n); continue; }
+          const voiceEl = n.el.querySelector(":scope > voice");
+          const staffEl = n.el.querySelector(":scope > staff");
+          let segStart = n.start;
+          for (const b of [...innerTs, n.end]) {
+            const t = durationToType(b - segStart, divs);
+            if (!t) { splitFailed = true; break; }
+            const el = doc.createElement("note");
+            el.appendChild(doc.createElement("rest"));
+            const durNode = doc.createElement("duration");
+            durNode.textContent = String(b - segStart);
+            el.appendChild(durNode);
+            if (voiceEl) el.appendChild(voiceEl.cloneNode(true));
+            const typeNode = doc.createElement("type");
+            typeNode.textContent = t.type;
+            el.appendChild(typeNode);
+            if (t.dot) el.appendChild(doc.createElement("dot"));
+            if (staffEl) el.appendChild(staffEl.cloneNode(true));
+            newNotes.push({ type: "note", el, start: segStart, end: b, isRest: true });
+            segStart = b;
+          }
+          if (splitFailed) break;
+        }
+        if (splitFailed) return;
+
+        const firstTimedIdx = items.findIndex(it => it.type !== "other");
+        const preOthers = firstTimedIdx > 0 ? items.slice(0, firstTimedIdx).map(it => it.el) : [];
+        let lastTimedIdx = -1;
+        items.forEach((it, i) => { if (it.type !== "other") lastTimedIdx = i; });
+        const postOthers = items.slice(lastTimedIdx + 1).filter(it => it.type === "other").map(it => it.el);
+
+        const timedMerged = [...newNotes, ...harmonies].sort((a, b) => {
+          const ta = a.type === "harmony" ? a.ts : a.start;
+          const tb = b.type === "harmony" ? b.ts : b.start;
+          return ta !== tb ? ta - tb : (a.type === "harmony" ? -1 : 1);
+        });
+
+        children.forEach(c => measure.removeChild(c));
+        [...preOthers, ...timedMerged.map(it => it.el), ...postOthers].forEach(el => measure.appendChild(el));
+      });
+    });
+  }
+
   // ---------- loading ----------
 
   async function loadScoreFromText(text, filename) {
@@ -805,6 +920,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
 
     splitOffsetHarmonyRests(doc);
+    splitBackupForwardHarmonyRests(doc);
 
     barBreaks = null; // recomputed on render for the current screen width/zoom
     originalDoc = doc;
