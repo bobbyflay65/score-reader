@@ -45,6 +45,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   /* the score should only ever scroll vertically: kill sideways
      panning/overscroll at the page level */
   html, body { overflow-x: hidden; overscroll-behavior-x: none; }
+  /* iOS Safari doesn't reliably honor the JS scrollBy({behavior:"smooth"})
+     options object, but does respect this CSS property - the footpedal
+     paging relies on it for a real animated scroll instead of a jump. */
+  html { scroll-behavior: smooth; }
   header {
     position: sticky; top: 0; z-index: 10;
     background: rgba(244,241,234,0.92);
@@ -1293,7 +1297,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const tag = document.activeElement && document.activeElement.tagName;
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
     e.preventDefault();
-    window.scrollBy({ top: window.innerHeight * 0.25 * (e.key === "ArrowUp" ? -1 : 1), behavior: "smooth" });
+    // plain two-arg form so the CSS scroll-behavior above governs the
+    // animation - iOS Safari is inconsistent about the options-object form
+    window.scrollBy(0, window.innerHeight * 0.25 * (e.key === "ArrowUp" ? -1 : 1));
   });
 
   // hide the header while scrolling down; bring it back on scroll up
