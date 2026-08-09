@@ -547,6 +547,23 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
   }
 
+  // ---------- repeat-instruction highlighting ----------
+
+  // "D.S. al Coda", "To Coda", "D.C. al Fine", "Fine", "Segno" etc. are all
+  // rendered by OSMD in one consistent, distinct style (italic bold Times
+  // 12pt) - unlike chord symbols, no text-pattern matching is needed here,
+  // the font signature alone reliably identifies them. The segno/coda
+  // glyph icons themselves and repeat-barline dots are unlabeled SVG
+  // <path> outlines indistinguishable from notehead paths, so those can't
+  // be safely recolored without risking painting a stray note.
+  function styleRepeatText() {
+    const svg = $("sheet").querySelector("svg");
+    if (!svg) return;
+    svg.querySelectorAll('text[font-family="times"][font-style="italic"][font-size="12pt"]').forEach(t => {
+      t.setAttribute("fill", "#1a5fb4");
+    });
+  }
+
   // OSMD's autoResize option (needed to keep "Fit width" layout responsive
   // on rotation) installs its own internal window-resize listener that
   // redraws the score directly - bypassing renderCurrent()/applyZoom() and
@@ -557,7 +574,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // triggered it - re-applies the styling every time it's needed. Only
   // childList is observed (not attributes), so styleChordSymbols()'s own
   // attribute writes don't retrigger this.
-  new MutationObserver(() => styleChordSymbols())
+  new MutationObserver(() => { styleChordSymbols(); styleRepeatText(); })
     .observe($("sheet"), { childList: true, subtree: true });
 
   async function renderCurrent() {
@@ -582,6 +599,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     o.Zoom = parseFloat($("zoom").value);
     o.render();
     styleChordSymbols();
+    styleRepeatText();
     let label = "Key: " + keyName(fifthsAfter(semis), origMode);
     if (instChroma) label += concert ? " · concert pitch" : " · as written (" + instName + ")";
     if (currentSemis !== 0) label += "  (" + (currentSemis > 0 ? "+" : "") + currentSemis + " st)";
@@ -912,7 +930,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     osmd.Zoom = parseFloat($("zoom").value);
     // zooming can change how many bars fit per row; re-group if so
     if ($("layout").value === "grouped" && desiredMaxGroup() !== lastMaxGroup) renderCurrent();
-    else { osmd.render(); styleChordSymbols(); }
+    else { osmd.render(); styleChordSymbols(); styleRepeatText(); }
   }
   $("zoom").addEventListener("input", () => {
     updateZoomPct();
