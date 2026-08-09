@@ -547,6 +547,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
   }
 
+  // OSMD's autoResize option (needed to keep "Fit width" layout responsive
+  // on rotation) installs its own internal window-resize listener that
+  // redraws the score directly - bypassing renderCurrent()/applyZoom() and
+  // the styleChordSymbols() call after them. On mobile Safari, scrolling
+  // itself fires resize events (the toolbar shows/hides), so without this
+  // the chord coloring would silently disappear the moment someone scrolls.
+  // Watching for OSMD rebuilding the SVG's contents - regardless of what
+  // triggered it - re-applies the styling every time it's needed. Only
+  // childList is observed (not attributes), so styleChordSymbols()'s own
+  // attribute writes don't retrigger this.
+  new MutationObserver(() => styleChordSymbols())
+    .observe($("sheet"), { childList: true, subtree: true });
+
   async function renderCurrent() {
     const semis = effSemis();
     const doc = transposeDoc(originalDoc.cloneNode(true), semis);
