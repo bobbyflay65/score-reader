@@ -1293,7 +1293,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const tag = document.activeElement && document.activeElement.tagName;
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
     e.preventDefault();
-    window.scrollBy({ top: window.innerHeight * 0.25 * (e.key === "ArrowUp" ? -1 : 1), behavior: "instant" });
+    window.scrollBy({ top: window.innerHeight * 0.25 * (e.key === "ArrowUp" ? -1 : 1), behavior: "smooth" });
   });
 
   // hide the header while scrolling down; bring it back on scroll up
