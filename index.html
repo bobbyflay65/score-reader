@@ -530,7 +530,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // grammar regex (root letter + optional accidental/quality/extension/
   // bass); lyric syllables never satisfy it since they don't consist of a
   // bare A-G root followed only by valid chord-symbol characters.
-  const CHORD_RE = /^[A-G](?:#{1,2}|b{1,2})?(?:maj|Maj|MAJ|min|Min|MIN|dim|Dim|DIM|aug|Aug|AUG|sus|Sus|SUS|add|Add|ADD|alt|Alt|ALT|[mM]|Δ|ø|°|\+|-){0,3}[0-9]{0,2}(?:\(?[#b]\d{1,2}\)?){0,3}(?:\/(?:[A-G](?:#{1,2}|b{1,2})?|[0-9]{1,2}))?$/;
+  const CHORD_RE = /^[A-G](?:#{1,2}|b{1,2})?(?:maj|Maj|MAJ|min|Min|MIN|dim|Dim|DIM|aug|Aug|AUG|sus|Sus|SUS|add|Add|ADD|alt|Alt|ALT|[mM]|Δ|ø|°|\+|-){0,3}[0-9]{0,2}(?:\(?[#b]?\d{1,2}\)?){0,3}(?:\/(?:[A-G](?:#{1,2}|b{1,2})?|[0-9]{1,2}))?$/;
 
   function styleChordSymbols() {
     const svg = $("sheet").querySelector("svg");
@@ -547,62 +547,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
   }
 
-  // ---------- repeat-instruction highlighting ----------
-
-  // "D.S. al Coda", "To Coda", "D.C. al Fine", "Fine", "Segno" etc. are all
-  // rendered by OSMD in one consistent, distinct style (italic bold Times
-  // 12pt) - unlike chord symbols, no text-pattern matching is needed here,
-  // the font signature alone reliably identifies them. The segno/coda
-  // glyph icons themselves and repeat-barline dots are unlabeled SVG
-  // <path> outlines indistinguishable from notehead paths, so those can't
-  // be safely recolored without risking painting a stray note.
-  function styleRepeatText() {
-    const svg = $("sheet").querySelector("svg");
-    if (!svg) return;
-    svg.querySelectorAll('text[font-family="times"][font-style="italic"][font-size="12pt"]').forEach(t => {
-      t.setAttribute("fill", "#1a5fb4");
-    });
-  }
-
-  // The single-word "Coda"/"Segno" caption (as opposed to the "To Coda"/
-  // "D.S. al ..." phrases above) isn't placed by OSMD's own layout at all -
-  // it's drawn by VexFlow's barline-repetition renderer at a fixed slot
-  // above the staff, with no awareness of whatever chord symbol or section
-  // label happens to already be sitting there. That made it collide with
-  // nearby text well before this feature existed; coloring it blue just
-  // made the overlap obvious. Since there's no engraving rule for this
-  // path, nudge the caption upward in actual collisions only, just enough
-  // to clear whatever it's overlapping.
-  function resolveCodaCollisions() {
-    const svg = $("sheet").querySelector("svg");
-    if (!svg) return;
-    const captions = [...svg.querySelectorAll('text[fill="#1a5fb4"]')]
-      .filter(t => /^(Coda|Segno)$/.test(t.textContent.trim()));
-    if (!captions.length) return;
-    const others = [...svg.querySelectorAll("text")].filter(t => t.getAttribute("fill") !== "#1a5fb4");
-    for (const cap of captions) {
-      for (let attempt = 0; attempt < 6; attempt++) {
-        const cr = cap.getBoundingClientRect();
-        let clearTop = null;
-        for (const o of others) {
-          const or = o.getBoundingClientRect();
-          const overlapX = Math.min(cr.right, or.right) - Math.max(cr.left, or.left);
-          const overlapY = Math.min(cr.bottom, or.bottom) - Math.max(cr.top, or.top);
-          if (overlapX > 2 && overlapY > 2) {
-            clearTop = clearTop === null ? or.top : Math.min(clearTop, or.top);
-          }
-        }
-        if (clearTop === null) break;
-        const shiftPx = cr.bottom - clearTop + 2;
-        if (shiftPx <= 0) break;
-        const ctm = cap.getScreenCTM();
-        if (!ctm || !ctm.d) break;
-        const y = parseFloat(cap.getAttribute("y"));
-        cap.setAttribute("y", String(y - shiftPx / ctm.d));
-      }
-    }
-  }
-
   // OSMD's autoResize option (needed to keep "Fit width" layout responsive
   // on rotation) installs its own internal window-resize listener that
   // redraws the score directly - bypassing renderCurrent()/applyZoom() and
@@ -613,7 +557,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // triggered it - re-applies the styling every time it's needed. Only
   // childList is observed (not attributes), so styleChordSymbols()'s own
   // attribute writes don't retrigger this.
-  new MutationObserver(() => { styleChordSymbols(); styleRepeatText(); resolveCodaCollisions(); })
+  new MutationObserver(() => { styleChordSymbols(); })
     .observe($("sheet"), { childList: true, subtree: true });
 
   async function renderCurrent() {
@@ -638,8 +582,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     o.Zoom = parseFloat($("zoom").value);
     o.render();
     styleChordSymbols();
-    styleRepeatText();
-    resolveCodaCollisions();
     let label = "Key: " + keyName(fifthsAfter(semis), origMode);
     if (instChroma) label += concert ? " · concert pitch" : " · as written (" + instName + ")";
     if (currentSemis !== 0) label += "  (" + (currentSemis > 0 ? "+" : "") + currentSemis + " st)";
@@ -1086,7 +1028,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     osmd.Zoom = parseFloat($("zoom").value);
     // zooming can change how many bars fit per row; re-group if so
     if ($("layout").value === "grouped" && desiredMaxGroup() !== lastMaxGroup) renderCurrent();
-    else { osmd.render(); styleChordSymbols(); styleRepeatText(); resolveCodaCollisions(); }
+    else { osmd.render(); styleChordSymbols(); }
   }
   $("zoom").addEventListener("input", () => {
     updateZoomPct();
@@ -1340,6 +1282,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("service-worker.js").catch(() => {});
   }
+
+  // page-turn footpedals typically send plain ArrowUp/ArrowDown keystrokes;
+  // the browser's default is a small ~40px nudge, too fine for a foot tap
+  // mid-song. Scroll a quarter of the viewport per press instead. Skipped
+  // while focus is in a text field or the zoom slider so those keep their
+  // normal arrow-key behavior.
+  window.addEventListener("keydown", e => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    e.preventDefault();
+    window.scrollBy({ top: window.innerHeight * 0.25 * (e.key === "ArrowUp" ? -1 : 1), behavior: "instant" });
+  });
 
   // hide the header while scrolling down; bring it back on scroll up
   const hdr = document.querySelector("header");
