@@ -495,6 +495,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     osmd.EngravingRules.RehearsalMarkYOffset = 58;
     osmd.EngravingRules.MinimumDistanceBetweenSystems = 12;
     osmd.EngravingRules.MinSkyBottomDistBetweenSystems = 10;
+    // segno/coda signs are drawn via the renderer's repeat-symbol system,
+    // which — like rehearsal marks — doesn't reserve its own space, so a
+    // chord symbol on the same beat (common right at a segno, which often
+    // opens a new system) can land right on top of it. Lift it clear.
+    osmd.EngravingRules.RepetitionSymbolsYOffset = 15;
     applySpacing();
     return osmd;
   }
@@ -547,6 +552,118 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     sel.value = "0";
     sel.disabled = false;
+  }
+
+  // ---------- offset-positioned chord splitting ----------
+
+  // maps a duration (in divisions) to a MusicXML note <type>+dot, given how
+  // many divisions make up one quarter note; returns null if it doesn't
+  // land on a plain or singly-dotted value, so callers can bail out safely
+  // rather than emit an invalid duration/type pair
+  function durationToType(divs, divisionsPerQuarter) {
+    const q = divs / divisionsPerQuarter;
+    const table = [
+      [6, "whole", true], [4, "whole", false],
+      [3, "half", true], [2, "half", false],
+      [1.5, "quarter", true], [1, "quarter", false],
+      [0.75, "eighth", true], [0.5, "eighth", false],
+      [0.375, "16th", true], [0.25, "16th", false],
+      [0.125, "32nd", false]
+    ];
+    for (const [val, type, dot] of table) {
+      if (Math.abs(q - val) < 1e-6) return { type, dot };
+    }
+    return null;
+  }
+
+  // Sibelius sometimes places two or more chord changes over a single
+  // sustained rest, distinguishing their horizontal position only via each
+  // <harmony>'s <offset> (a fine-grained nudge in divisions) rather than
+  // giving each one its own note to anchor to. The renderer here doesn't
+  // consult that offset for spacing, so the chords all land on top of each
+  // other at the start of the rest instead of spread across it. Fix: split
+  // the rest into one shorter rest per chord change (musically identical —
+  // still one continuous silence, just with extra anchor points), so each
+  // chord gets a real position to attach to. Only applied when every
+  // resulting fragment lands on a clean, valid note duration; otherwise the
+  // measure is left untouched rather than risk an invalid split.
+  function splitOffsetHarmonyRests(doc) {
+    doc.querySelectorAll("part").forEach(part => {
+      let divs = 1;
+      [...part.children].forEach(measure => {
+        if (measure.tagName !== "measure") return;
+        const divEl = measure.querySelector(":scope > attributes > divisions");
+        if (divEl) divs = parseInt(divEl.textContent, 10) || divs;
+
+        let children = [...measure.children];
+        let i = 0;
+        while (i < children.length) {
+          if (children[i].tagName !== "harmony") { i++; continue; }
+          let j = i;
+          const harmonies = [];
+          while (j < children.length && children[j].tagName === "harmony") {
+            harmonies.push(children[j]);
+            j++;
+          }
+          const note = children[j];
+          const isPlainRest = note && note.tagName === "note" &&
+            note.querySelector(":scope > rest") && !note.querySelector(":scope > chord");
+          if (harmonies.length < 2 || !isPlainRest) { i = j + 1; continue; }
+
+          const durEl = note.querySelector(":scope > duration");
+          const total = durEl ? parseInt(durEl.textContent, 10) : NaN;
+          const offsets = harmonies.map(h => {
+            const oEl = h.querySelector(":scope > offset");
+            return oEl ? parseInt(oEl.textContent, 10) : NaN;
+          });
+          const valid = Number.isFinite(total) && offsets.every(o => Number.isFinite(o) && o >= 0 && o <= total);
+          if (!valid) { i = j + 1; continue; }
+
+          const pairs = harmonies.map((h, idx) => ({ h, offset: offsets[idx] }))
+            .sort((a, b) => a.offset - b.offset);
+          const bounds = [];
+          if (pairs[0].offset > 0) bounds.push({ h: null, start: 0, end: pairs[0].offset });
+          pairs.forEach((p, k) => {
+            const end = k + 1 < pairs.length ? pairs[k + 1].offset : total;
+            if (end > p.offset) bounds.push({ h: p.h, start: p.offset, end });
+          });
+
+          const segs = bounds.map(b => {
+            const d = b.end - b.start;
+            const t = durationToType(d, divs);
+            return t ? { h: b.h, dur: d, type: t.type, dot: t.dot } : null;
+          });
+          if (segs.length < 2 || segs.some(s => !s)) { i = j + 1; continue; }
+
+          const voiceEl = note.querySelector(":scope > voice");
+          const staffEl = note.querySelector(":scope > staff");
+          segs.forEach(s => {
+            if (s.h) {
+              const hClone = s.h.cloneNode(true);
+              hClone.querySelector(":scope > offset")?.remove();
+              measure.insertBefore(hClone, note);
+            }
+            const n = doc.createElement("note");
+            n.appendChild(doc.createElement("rest"));
+            const durNode = doc.createElement("duration");
+            durNode.textContent = String(s.dur);
+            n.appendChild(durNode);
+            if (voiceEl) n.appendChild(voiceEl.cloneNode(true));
+            const typeNode = doc.createElement("type");
+            typeNode.textContent = s.type;
+            n.appendChild(typeNode);
+            if (s.dot) n.appendChild(doc.createElement("dot"));
+            if (staffEl) n.appendChild(staffEl.cloneNode(true));
+            measure.insertBefore(n, note);
+          });
+          measure.removeChild(note);
+          harmonies.forEach(h => measure.removeChild(h));
+
+          children = [...measure.children];
+          i = 0;
+        }
+      });
+    });
   }
 
   // ---------- loading ----------
@@ -602,6 +719,26 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       reh.textContent = w.textContent;
       w.replaceWith(reh);
     });
+
+    // Sibelius's own "To Coda"/segno text-insert tool sometimes exports its
+    // internal rich-text markup as literal characters instead of resolving
+    // it — e.g. `To <font size="20"></font><sym>coda</sym>` shows up
+    // verbatim as the words text. Strip the fake tags down to plain,
+    // readable words; the real coda/segno glyphs are separate XML elements
+    // elsewhere in the file and aren't affected by this.
+    doc.querySelectorAll("words").forEach(w => {
+      if (!/<sym>|<font[\s>]/i.test(w.textContent)) return;
+      w.textContent = w.textContent
+        .replace(/<font[^>]*>/gi, "")
+        .replace(/<\/font>/gi, "")
+        .replace(/<sym>\s*coda\s*<\/sym>/gi, "Coda")
+        .replace(/<sym>\s*segno\s*<\/sym>/gi, "Segno")
+        .replace(/<sym>([^<]*)<\/sym>/gi, "$1")
+        .replace(/\s+/g, " ")
+        .trim();
+    });
+
+    splitOffsetHarmonyRests(doc);
 
     barBreaks = null; // recomputed on render for the current screen width/zoom
     originalDoc = doc;
