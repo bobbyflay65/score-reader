@@ -534,7 +534,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // grammar regex (root letter + optional accidental/quality/extension/
   // bass); lyric syllables never satisfy it since they don't consist of a
   // bare A-G root followed only by valid chord-symbol characters.
-  const CHORD_RE = /^[A-G](?:#{1,2}|b{1,2})?(?:maj|Maj|MAJ|min|Min|MIN|dim|Dim|DIM|aug|Aug|AUG|sus|Sus|SUS|add|Add|ADD|alt|Alt|ALT|[mM]|Δ|ø|°|\+|-){0,3}[0-9]{0,2}(?:\(?[#b]?\d{1,2}\)?){0,3}(?:\/(?:[A-G](?:#{1,2}|b{1,2})?|[0-9]{1,2}))?$/;
+  const CHORD_RE = /^[A-G](?:#{1,2}|b{1,2}|x)?(?:maj|Maj|MAJ|min|Min|MIN|dim|Dim|DIM|aug|Aug|AUG|sus|Sus|SUS|add|Add|ADD|alt|Alt|ALT|omit|Omit|OMIT|[mM]|Δ|ø|°|\+|-|[#b]\d{1,2}|[0-9]{1,2}|\([^()]{1,14}\)){0,6}(?:\/(?:[A-G](?:#{1,2}|b{1,2}|x)?|[0-9]{1,2}))?$/;
 
   function styleChordSymbols() {
     const svg = $("sheet").querySelector("svg");
@@ -903,6 +903,25 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         .replace(/<sym>([^<]*)<\/sym>/gi, "$1")
         .replace(/\s+/g, " ")
         .trim();
+    });
+
+    // Sibelius sometimes exports a double-sharp root/bass note as a single
+    // malformed <root-step>/<bass-step> value like "Fx" (note letter + "x")
+    // instead of step "F" + a separate alter of 2, as MusicXML expects. The
+    // renderer can't look up "Fx" as a note letter, so it silently drops
+    // that note - e.g. a bass note vanishes and "Bm/F♯♯" renders as the
+    // truncated "Bm/". Split it back into the two proper elements.
+    doc.querySelectorAll("root-step, bass-step").forEach(stepEl => {
+      const m = /^([A-G])x$/.exec(stepEl.textContent.trim());
+      if (!m) return;
+      stepEl.textContent = m[1];
+      const alterTag = stepEl.tagName === "root-step" ? "root-alter" : "bass-alter";
+      let alterEl = stepEl.parentElement.querySelector(alterTag);
+      if (!alterEl) {
+        alterEl = doc.createElement(alterTag);
+        stepEl.after(alterEl);
+      }
+      alterEl.textContent = "2";
     });
 
     splitOffsetHarmonyRests(doc);
