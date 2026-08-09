@@ -564,6 +564,45 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     });
   }
 
+  // The single-word "Coda"/"Segno" caption (as opposed to the "To Coda"/
+  // "D.S. al ..." phrases above) isn't placed by OSMD's own layout at all -
+  // it's drawn by VexFlow's barline-repetition renderer at a fixed slot
+  // above the staff, with no awareness of whatever chord symbol or section
+  // label happens to already be sitting there. That made it collide with
+  // nearby text well before this feature existed; coloring it blue just
+  // made the overlap obvious. Since there's no engraving rule for this
+  // path, nudge the caption upward in actual collisions only, just enough
+  // to clear whatever it's overlapping.
+  function resolveCodaCollisions() {
+    const svg = $("sheet").querySelector("svg");
+    if (!svg) return;
+    const captions = [...svg.querySelectorAll('text[fill="#1a5fb4"]')]
+      .filter(t => /^(Coda|Segno)$/.test(t.textContent.trim()));
+    if (!captions.length) return;
+    const others = [...svg.querySelectorAll("text")].filter(t => t.getAttribute("fill") !== "#1a5fb4");
+    for (const cap of captions) {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const cr = cap.getBoundingClientRect();
+        let clearTop = null;
+        for (const o of others) {
+          const or = o.getBoundingClientRect();
+          const overlapX = Math.min(cr.right, or.right) - Math.max(cr.left, or.left);
+          const overlapY = Math.min(cr.bottom, or.bottom) - Math.max(cr.top, or.top);
+          if (overlapX > 2 && overlapY > 2) {
+            clearTop = clearTop === null ? or.top : Math.min(clearTop, or.top);
+          }
+        }
+        if (clearTop === null) break;
+        const shiftPx = cr.bottom - clearTop + 2;
+        if (shiftPx <= 0) break;
+        const ctm = cap.getScreenCTM();
+        if (!ctm || !ctm.d) break;
+        const y = parseFloat(cap.getAttribute("y"));
+        cap.setAttribute("y", String(y - shiftPx / ctm.d));
+      }
+    }
+  }
+
   // OSMD's autoResize option (needed to keep "Fit width" layout responsive
   // on rotation) installs its own internal window-resize listener that
   // redraws the score directly - bypassing renderCurrent()/applyZoom() and
@@ -574,7 +613,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // triggered it - re-applies the styling every time it's needed. Only
   // childList is observed (not attributes), so styleChordSymbols()'s own
   // attribute writes don't retrigger this.
-  new MutationObserver(() => { styleChordSymbols(); styleRepeatText(); })
+  new MutationObserver(() => { styleChordSymbols(); styleRepeatText(); resolveCodaCollisions(); })
     .observe($("sheet"), { childList: true, subtree: true });
 
   async function renderCurrent() {
@@ -600,6 +639,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     o.render();
     styleChordSymbols();
     styleRepeatText();
+    resolveCodaCollisions();
     let label = "Key: " + keyName(fifthsAfter(semis), origMode);
     if (instChroma) label += concert ? " · concert pitch" : " · as written (" + instName + ")";
     if (currentSemis !== 0) label += "  (" + (currentSemis > 0 ? "+" : "") + currentSemis + " st)";
@@ -1046,7 +1086,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     osmd.Zoom = parseFloat($("zoom").value);
     // zooming can change how many bars fit per row; re-group if so
     if ($("layout").value === "grouped" && desiredMaxGroup() !== lastMaxGroup) renderCurrent();
-    else { osmd.render(); styleChordSymbols(); styleRepeatText(); }
+    else { osmd.render(); styleChordSymbols(); styleRepeatText(); resolveCodaCollisions(); }
   }
   $("zoom").addEventListener("input", () => {
     updateZoomPct();
