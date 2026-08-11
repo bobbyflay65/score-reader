@@ -79,15 +79,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   button.step { padding: 6px 12px; font-weight: 700; }
   input[type=range] { width: 110px; accent-color: var(--accent); }
   .zoom-pct { font-size: 12px; color: var(--muted); min-width: 34px; text-align: right; }
-  #scroll-btn[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
-  #scroll-panel {
-    position: absolute; top: calc(100% + 6px); left: 0; z-index: 20;
-    display: flex; align-items: center; gap: 8px;
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 10px 12px; box-shadow: 0 6px 18px rgba(0,0,0,0.12);
-    white-space: nowrap;
-  }
-  #scroll-panel[hidden] { display: none; }
   .secondary { display: contents; }
   #more { display: none; }
   #dropzone {
@@ -235,20 +226,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         </select>
       </div>
       <button id="stage" aria-pressed="false" title="Dark mode for dark venues">Stage</button>
-      <div class="ctl" id="scroll-ctl" style="position:relative">
-        <button id="scroll-btn" aria-expanded="false" title="Adjust footpedal scroll distance">Scroll</button>
-        <div id="scroll-panel" hidden>
-          <label for="scroll-amount">Scroll distance</label>
-          <input type="range" id="scroll-amount" min="0.1" max="1" step="0.05" value="0.4">
-          <span class="zoom-pct" id="scroll-amount-pct">40%</span>
-        </div>
-      </div>
       <button id="print">Print</button>
     </div>
     <div class="ctl">
       <label for="zoom">Zoom</label>
       <input type="range" id="zoom" min="0.5" max="1.6" step="0.01" value="0.9">
       <span class="zoom-pct" id="zoom-pct">90%</span>
+    </div>
+    <div class="ctl" title="How far an ArrowUp/Down footpedal press scrolls">
+      <label for="scroll-amount">Scroll</label>
+      <input type="range" id="scroll-amount" min="0.1" max="1" step="0.05" value="0.4">
+      <span class="zoom-pct" id="scroll-amount-pct">40%</span>
     </div>
     <button id="more" aria-expanded="false" title="More controls">⋯</button>
     <button id="library-btn">Songs</button>
@@ -1175,10 +1163,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   try { if (localStorage.getItem("stageMode")) setStage(true); } catch (e) {}
 
   // footpedal scroll distance: how much of the viewport an ArrowUp/Down
-  // press moves, as a fraction. Adjustable via the Scroll popover so it
-  // doesn't need a code change every time it needs retuning.
-  const scrollBtn = $("scroll-btn");
-  const scrollPanel = $("scroll-panel");
+  // press moves, as a fraction. Sits next to Zoom so it's always visible.
   const scrollAmount = $("scroll-amount");
   const scrollAmountPct = $("scroll-amount-pct");
   let scrollFraction = 0.4;
@@ -1193,16 +1178,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     scrollAmountPct.textContent = Math.round(scrollFraction * 100) + "%";
     try { localStorage.setItem("scrollFraction", String(scrollFraction)); } catch (e) {}
   });
-  function setScrollPanelOpen(open) {
-    scrollPanel.hidden = !open;
-    scrollBtn.setAttribute("aria-expanded", String(open));
-  }
-  scrollBtn.addEventListener("click", e => {
-    e.stopPropagation();
-    setScrollPanelOpen(scrollPanel.hidden);
-  });
-  scrollPanel.addEventListener("click", e => e.stopPropagation());
-  document.addEventListener("click", () => setScrollPanelOpen(false));
 
   $("more").addEventListener("click", () => {
     const open = document.querySelector("header").classList.toggle("expanded");
