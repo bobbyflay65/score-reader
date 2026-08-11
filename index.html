@@ -226,6 +226,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         </select>
       </div>
       <button id="stage" aria-pressed="false" title="Dark mode for dark venues">Stage</button>
+      <button id="page-mode" aria-pressed="false" title="Full-page jumps instead of overlapping scroll">Pages</button>
       <button id="print">Print</button>
     </div>
     <div class="ctl">
@@ -1157,6 +1158,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   stageBtn.addEventListener("click", () => setStage(!document.body.classList.contains("stage")));
   try { if (localStorage.getItem("stageMode")) setStage(true); } catch (e) {}
 
+  const pageModeBtn = $("page-mode");
+  function setPageMode(on) {
+    document.body.classList.toggle("page-mode", on);
+    pageModeBtn.setAttribute("aria-pressed", String(on));
+    try { localStorage.setItem("pageMode", on ? "1" : ""); } catch (e) {}
+  }
+  pageModeBtn.addEventListener("click", () => setPageMode(!document.body.classList.contains("page-mode")));
+  try { if (localStorage.getItem("pageMode")) setPageMode(true); } catch (e) {}
+
   $("more").addEventListener("click", () => {
     const open = document.querySelector("header").classList.toggle("expanded");
     $("more").setAttribute("aria-expanded", String(open));
@@ -1316,9 +1326,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const tag = document.activeElement && document.activeElement.tagName;
     if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
     e.preventDefault();
+    // page mode: jump a full, non-overlapping screen so it reads like a
+    // real page turn; continuous mode: partial-overlap scroll as before
+    const fraction = document.body.classList.contains("page-mode") ? 1 : 0.4;
     // plain two-arg form so the CSS scroll-behavior above governs the
     // animation - iOS Safari is inconsistent about the options-object form
-    window.scrollBy(0, window.innerHeight * 0.4 * (e.key === "ArrowUp" ? -1 : 1));
+    window.scrollBy(0, window.innerHeight * fraction * (e.key === "ArrowUp" ? -1 : 1));
   });
 
   // hide the header while scrolling down; bring it back on scroll up
