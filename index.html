@@ -189,6 +189,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 </head>
 <body>
 
+<!-- Bluetooth page-turner pedals send plain arrow-key presses, but iPadOS
+     often won't route them into Safari at all until the page has a genuine
+     focused text-editing session - a hardware keyboard connected via cable
+     triggers that reliably, Bluetooth pedals sometimes don't on their own.
+     inputmode="none" keeps the on-screen keyboard from popping up for
+     touch-only users while still giving iOS a real session to route
+     hardware keys into. See keepHardwareKeyboardPrimed() below. -->
+<input id="hw-kb-anchor" type="text" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-hidden="true" tabindex="-1" style="position:fixed; top:-100px; left:-100px; width:1px; height:1px; opacity:0; border:0; padding:0;">
+
 <header>
   <div class="brand">Score <span>Reader</span></div>
   <div class="song-info">
@@ -962,6 +971,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     await renderCurrent();
     saveSong({ name: filename, title: songName, text: text, added: Date.now() });
     keepAwake();
+    primeHardwareKeyboard();
     showStatus(instChroma
       ? "Loaded “" + songName + "” — " + instName + " part, showing concert pitch"
       : "Loaded “" + songName + "”");
@@ -1149,8 +1159,19 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if (!("wakeLock" in navigator)) return;
     try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
   }
+
+  // see the comment on #hw-kb-anchor near the top of <body> - keeping a
+  // hidden text field genuinely focused is what gives iPadOS a session to
+  // route a Bluetooth pedal's key presses into
+  const hwKbAnchor = $("hw-kb-anchor");
+  function primeHardwareKeyboard() {
+    if (!hwKbAnchor) return;
+    try { hwKbAnchor.focus({ preventScroll: true }); } catch (e) { hwKbAnchor.focus(); }
+  }
+  if (hwKbAnchor) hwKbAnchor.addEventListener("input", () => { hwKbAnchor.value = ""; });
+
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && originalDoc) keepAwake();
+    if (document.visibilityState === "visible" && originalDoc) { keepAwake(); primeHardwareKeyboard(); }
   });
 
   const stageBtn = $("stage");
@@ -1335,8 +1356,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // normal arrow-key behavior.
   window.addEventListener("keydown", e => {
     if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-    const tag = document.activeElement && document.activeElement.tagName;
-    if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
+    const active = document.activeElement;
+    const tag = active && active.tagName;
+    // #hw-kb-anchor is deliberately focused most of the time (see above) to
+    // keep hardware keyboards routed in - it must NOT count as "a real text
+    // field the user is typing in" for this guard
+    if ((tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") && active !== hwKbAnchor) return;
     e.preventDefault();
     // plain two-arg form so the CSS scroll-behavior above governs the
     // animation - iOS Safari is inconsistent about the options-object form
