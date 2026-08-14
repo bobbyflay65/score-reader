@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Key Test</title>
+<style>
+  body { font-family: -apple-system, sans-serif; margin: 0; padding: 16px; background: #111; color: #eee; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  p { color: #aaa; font-size: 14px; margin: 0 0 16px; }
+  #status { font-size: 13px; margin-bottom: 12px; }
+  #status.focused { color: #7f7; }
+  #status.unfocused { color: #f77; }
+  button { font-size: 14px; padding: 8px 14px; background: #333; color: #eee; border: 1px solid #555; border-radius: 6px; margin: 0 8px 16px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #333; }
+  th { color: #888; font-weight: normal; }
+  td.key { color: #7fd; font-weight: bold; }
+  td.prevented { color: #f77; }
+</style>
+</head>
+<body>
+<!-- hidden focused input: iOS Safari only routes external/Bluetooth keyboard
+     key events into the page while a real editable element is focused.
+     inputmode="none" stops the on-screen keyboard from popping up. -->
+<input id="anchor" type="text" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-hidden="true" tabindex="-1" style="position:fixed; top:-100px; left:-100px; width:1px; height:1px; opacity:0; border:0; padding:0;">
+<h1>Key Test</h1>
+<p>Status line below should say "focused" - if it says "NOT focused", tap "Re-focus" first. Then press the pedal. Every key it sends will appear below, newest on top.</p>
+<div id="status">checking...</div>
+<button id="refocus">Re-focus</button>
+<button id="clear">Clear log</button>
+<table>
+  <thead><tr><th>#</th><th>key</th><th>code</th><th>keyCode</th><th>default prevented?</th></tr></thead>
+  <tbody id="log"></tbody>
+</table>
+<script>
+  let n = 0;
+  const log = document.getElementById("log");
+  const anchor = document.getElementById("anchor");
+  const status = document.getElementById("status");
+
+  function focusAnchor() {
+    try { anchor.focus({ preventScroll: true }); } catch (e) { anchor.focus(); }
+  }
+  function updateStatus() {
+    const ok = document.activeElement === anchor;
+    status.textContent = ok ? "anchor is focused - ready" : "anchor is NOT focused - tap Re-focus";
+    status.className = ok ? "focused" : "unfocused";
+  }
+
+  focusAnchor();
+  updateStatus();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") { focusAnchor(); updateStatus(); }
+  });
+  anchor.addEventListener("input", () => { anchor.value = ""; });
+  anchor.addEventListener("blur", updateStatus);
+  anchor.addEventListener("focus", updateStatus);
+
+  document.getElementById("refocus").addEventListener("click", () => { focusAnchor(); updateStatus(); });
+  document.getElementById("clear").addEventListener("click", () => { log.innerHTML = ""; n = 0; });
+
+  window.addEventListener("keydown", e => {
+    n++;
+    const row = document.createElement("tr");
+    row.innerHTML =
+      "<td>" + n + "</td>" +
+      "<td class='key'>" + e.key + "</td>" +
+      "<td>" + e.code + "</td>" +
+      "<td>" + e.keyCode + "</td>" +
+      "<td class='" + (e.defaultPrevented ? "prevented" : "") + "'>" + e.defaultPrevented + "</td>";
+    log.insertBefore(row, log.firstChild);
+    updateStatus();
+  });
+</script>
+</body>
+</html>
