@@ -198,6 +198,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
      hardware keys into. See keepHardwareKeyboardPrimed() below. -->
 <input id="hw-kb-anchor" type="text" inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-hidden="true" tabindex="-1" style="position:fixed; top:-100px; left:-100px; width:1px; height:1px; opacity:0; border:0; padding:0;">
 
+<!-- temporary footpedal diagnostic panel, only shown with ?debug in the URL -->
+<div id="kb-debug" style="display:none; position:fixed; bottom:0; left:0; right:0; z-index:9999; background:#111; color:#eee; font:12px/1.4 -apple-system, sans-serif; padding:8px 10px; max-height:40vh; overflow:auto;">
+  <div id="kb-debug-status" style="margin-bottom:6px;"></div>
+  <div id="kb-debug-log"></div>
+</div>
+
 <header>
   <div class="brand">Score <span>Reader</span></div>
   <div class="song-info">
@@ -1170,6 +1176,35 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   if (hwKbAnchor) hwKbAnchor.addEventListener("input", () => { hwKbAnchor.value = ""; });
 
+  // temporary footpedal diagnostic - remove once the pedal issue is resolved
+  if (location.search.includes("debug")) {
+    const dbgPanel = $("kb-debug");
+    const dbgStatus = $("kb-debug-status");
+    const dbgLog = $("kb-debug-log");
+    dbgPanel.style.display = "block";
+    let dbgN = 0;
+    function updateDbgStatus() {
+      const focused = document.activeElement === hwKbAnchor;
+      dbgStatus.textContent = "anchor focused: " + focused + " | active element: " +
+        (document.activeElement ? document.activeElement.tagName + "#" + document.activeElement.id : "none") +
+        " | visibility: " + document.visibilityState;
+      dbgStatus.style.color = focused ? "#7f7" : "#f77";
+    }
+    setInterval(updateDbgStatus, 500);
+    updateDbgStatus();
+    // capture phase, added before the scroll handler below, with no key
+    // filtering at all - this logs literally every keydown that reaches
+    // the page, whether or not the scroll handler below acts on it
+    window.addEventListener("keydown", e => {
+      dbgN++;
+      const row = document.createElement("div");
+      row.textContent = "#" + dbgN + "  key=" + e.key + "  code=" + e.code + "  keyCode=" + e.keyCode +
+        "  target=" + (e.target && (e.target.tagName + "#" + e.target.id));
+      dbgLog.insertBefore(row, dbgLog.firstChild);
+      updateDbgStatus();
+    }, { capture: true });
+  }
+
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && originalDoc) { keepAwake(); primeHardwareKeyboard(); }
   });
@@ -1349,13 +1384,26 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     navigator.serviceWorker.register("service-worker.js").catch(() => {});
   }
 
-  // page-turn footpedals typically send plain ArrowUp/ArrowDown keystrokes;
-  // the browser's default is a small ~40px nudge, too fine for a foot tap
-  // mid-song. Scroll half the viewport per press instead. Skipped
-  // while focus is in a text field or the zoom slider so those keep their
-  // normal arrow-key behavior.
+  // page-turn footpedals typically send plain ArrowUp/ArrowDown or
+  // PageUp/PageDown keystrokes; the browser's default is a small ~40px
+  // nudge (or a near-full-page jump for PageUp/PageDown), too fine or too
+  // coarse for a foot tap mid-song. Scroll a fixed fraction of the
+  // viewport per press instead. Skipped while focus is in a text field or
+  // the zoom slider so those keep their normal key behavior.
+  // Note: iOS Safari has been observed to drop ArrowUp/ArrowDown key events
+  // from some Bluetooth HID pedals while forwarding PageUp/PageDown from the
+  // same device fine - so both key sets are handled here; if arrows are
+  // unreliable on your pedal, switch its mode to Page Up/Page Down.
+  const UP_KEYS = ["ArrowUp", "PageUp"];
+  const DOWN_KEYS = ["ArrowDown", "PageDown"];
+  // capture phase + stopImmediatePropagation: on iOS Safari, PageUp/PageDown
+  // from a Bluetooth HID pedal can trigger a native full-page scroll that a
+  // bubble-phase preventDefault() doesn't reliably suppress. Intercepting as
+  // early as possible gives preventDefault the best chance of winning.
   window.addEventListener("keydown", e => {
-    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    const isUp = UP_KEYS.includes(e.key);
+    const isDown = DOWN_KEYS.includes(e.key);
+    if (!isUp && !isDown) return;
     const active = document.activeElement;
     const tag = active && active.tagName;
     // #hw-kb-anchor is deliberately focused most of the time (see above) to
@@ -1363,10 +1411,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     // field the user is typing in" for this guard
     if ((tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") && active !== hwKbAnchor) return;
     e.preventDefault();
+    e.stopImmediatePropagation();
     // plain two-arg form so the CSS scroll-behavior above governs the
     // animation - iOS Safari is inconsistent about the options-object form
-    window.scrollBy(0, window.innerHeight * scrollFraction * (e.key === "ArrowUp" ? -1 : 1));
-  });
+    window.scrollBy(0, window.innerHeight * scrollFraction * (isUp ? -1 : 1));
+  }, { capture: true });
 
   // hide the header while scrolling down; bring it back on scroll up
   const hdr = document.querySelector("header");
