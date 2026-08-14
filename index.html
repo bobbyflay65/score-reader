@@ -1274,16 +1274,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   let allSongs = [];
 
   async function openSong(name) {
-    // full page reload instead of loading in place: iOS Safari can
-    // permanently drop a tab's Bluetooth pedal key routing once the
-    // on-screen keyboard has been used anywhere in that tab (e.g. typing
-    // into song search) - re-focusing fields afterward doesn't restore it,
-    // but a fresh page load reliably does. Hand off which song to open via
-    // a URL param so the new load can auto-open it (see bottom of file).
-    location.href = location.pathname + "?open=" + encodeURIComponent(name);
-  }
-
-  async function openSongInPlace(name) {
     try {
       showStatus("Loading…");
       const song = await dbGet(name);
@@ -1334,15 +1324,6 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     renderSongList();
   }
   refreshLibrary();
-
-  // if we got here via the reload-based openSong() handoff, auto-open the
-  // requested song, then strip the param so a manual refresh doesn't reopen it
-  (() => {
-    const toOpen = new URLSearchParams(location.search).get("open");
-    if (!toOpen) return;
-    history.replaceState(null, "", location.pathname);
-    openSongInPlace(toOpen);
-  })();
 
   $("song-search").addEventListener("input", renderSongList);
   $("search-clear").addEventListener("click", () => {
