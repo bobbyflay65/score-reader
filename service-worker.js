@@ -1,6 +1,8 @@
 // bump this string any time index.html (or any cached file) changes,
 // so the next launch fetches fresh files instead of serving stale ones
-const CACHE_NAME = "score-reader-v29";
+// (v30 was used by a since-reverted build, so skip straight to v31 - reusing
+// it would leave anyone who installed that build on their stale index.html)
+const CACHE_NAME = "score-reader-v31";
 
 const ASSETS = [
   "./",

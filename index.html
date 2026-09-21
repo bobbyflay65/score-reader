@@ -1176,6 +1176,50 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   if (hwKbAnchor) hwKbAnchor.addEventListener("input", () => { hwKbAnchor.value = ""; });
 
+  // A pedal only turns pages while the keydown handler at the bottom of this
+  // file sees the keystroke, and that handler deliberately stands down while
+  // a real form control has focus - so typing in the search box, and nudging
+  // a slider or the key dropdown with the arrow keys, keep working normally.
+  // The catch: tapping any of those controls leaves focus parked on it, and
+  // nothing ever handed focus back. Every pedal press after that silently
+  // adjusted the control instead of turning the page - tap the Zoom slider
+  // once mid-set and the pedal was dead for the rest of the song, with no
+  // hint as to why. (The Scroll-distance slider sits right next to Zoom and
+  // is always visible, so this was easy to trip by accident.)
+  //
+  // Fix: hand focus back to the anchor as soon as a *pointer* interaction
+  // with a control finishes, so the pedal is live again the moment the
+  // finger leaves the screen. Keyboard focus is deliberately left alone -
+  // someone tabbing through the header wants the arrow keys to keep
+  // adjusting whatever they just tabbed to.
+  const isTextEntry = el => {
+    if (!el || el === hwKbAnchor) return false;
+    if (el.tagName === "TEXTAREA") return true;
+    if (el.tagName !== "INPUT") return false;
+    // everything that isn't a slider/button/checkbox is a typing field
+    return !["range", "checkbox", "radio", "button", "file", "submit", "reset"].includes(el.type);
+  };
+  function restorePedalFocus() {
+    if (!originalDoc) return;                         // nothing to page through yet
+    if (isTextEntry(document.activeElement)) return;  // they're mid-sentence, leave them be
+    primeHardwareKeyboard();
+  }
+  // <select> is skipped here: on iOS a tap opens a native picker, and moving
+  // focus out from under it dismisses the picker. Selects are handled by
+  // their "change" event below, which fires once the picker has closed. If
+  // the picker is dismissed without picking, the tap that dismisses it lands
+  // outside the select and restores focus through this path anyway.
+  const POINTER_UP = window.PointerEvent ? ["pointerup"] : ["mouseup", "touchend"];
+  POINTER_UP.forEach(ev => document.addEventListener(ev, e => {
+    const t = e.target;
+    if (!t || !t.closest) return;
+    if (t.tagName === "SELECT" || isTextEntry(t) || t.closest(".search-wrap")) return;
+    restorePedalFocus();
+  }, { capture: true }));
+  // deferred a tick so iOS has finished tearing the picker down before focus moves
+  document.querySelectorAll("select").forEach(sel =>
+    sel.addEventListener("change", () => setTimeout(restorePedalFocus, 0)));
+
   // temporary footpedal diagnostic - remove once the pedal issue is resolved
   if (location.search.includes("debug")) {
     const dbgPanel = $("kb-debug");
@@ -1389,7 +1433,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // nudge (or a near-full-page jump for PageUp/PageDown), too fine or too
   // coarse for a foot tap mid-song. Scroll a fixed fraction of the
   // viewport per press instead. Skipped while focus is in a text field or
-  // the zoom slider so those keep their normal key behavior.
+  // the zoom slider so those keep their normal key behavior - see
+  // restorePedalFocus() above, which hands focus back to the anchor after a
+  // tap so that stand-down never outlives the interaction that caused it.
   // Note: iOS Safari has been observed to drop ArrowUp/ArrowDown key events
   // from some Bluetooth HID pedals while forwarding PageUp/PageDown from the
   // same device fine - so both key sets are handled here; if arrows are
