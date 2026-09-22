@@ -114,6 +114,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   #status.show { opacity: 0.92; }
   #status.error { background: #a03030; }
+  #pedal-chip {
+    position: fixed; left: 50%; bottom: 52px; transform: translateX(-50%);
+    display: none; align-items: center; gap: 6px;
+    background: #8a5a00; color: #fff; border: none; border-radius: 20px;
+    font-size: 13px; font-weight: 600; padding: 9px 16px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.25); z-index: 20;
+  }
+  #pedal-chip.show { display: flex; }
   /* stage mode: dark chrome, and the rendered score is color-inverted so
      it reads as light-on-dark in dark venues */
   body.stage { --paper: #15171a; --card: #1e2126; --ink: #e8e6e1; --muted: #9aa0a8; --border: #343941; }
@@ -290,6 +298,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
 <div id="sheet-wrap"><div id="sheet"></div></div>
 <div id="status"></div>
+<!-- shown only when the pedal has genuinely lost its keyboard routing and the
+     watchdog could not get it back; tapping it re-arms by hand -->
+<button id="pedal-chip" type="button">⚠︎ Pedal not armed — tap here</button>
 
 <script>
 (function () {
@@ -1209,26 +1220,88 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     // everything that isn't a slider/button/checkbox is a typing field
     return !["range", "checkbox", "radio", "button", "file", "submit", "reset"].includes(el.type);
   };
-  function restorePedalFocus() {
-    if (!originalDoc) return;                         // nothing to page through yet
-    if (isTextEntry(document.activeElement)) return;  // they're mid-sentence, leave them be
-    primeHardwareKeyboard();
+  // Rolling record of what happened to the pedal, kept in localStorage so it
+  // survives the reload that is sometimes part of the recovery. Read it back
+  // with ?debug after a set that went wrong - the failures here are silent and
+  // happen mid-song, which is exactly when nobody can watch a live panel.
+  const PEDAL_LOG_KEY = "pedalLog", PEDAL_LOG_MAX = 80;
+  let pedalLog = [];
+  try { pedalLog = JSON.parse(localStorage.getItem(PEDAL_LOG_KEY) || "[]"); } catch (e) {}
+  function logPedal(what) {
+    const a = document.activeElement;
+    pedalLog.push({ t: Date.now(), e: what, a: a ? (a.id || a.tagName) : "none" });
+    if (pedalLog.length > PEDAL_LOG_MAX) pedalLog.splice(0, pedalLog.length - PEDAL_LOG_MAX);
+    try { localStorage.setItem(PEDAL_LOG_KEY, JSON.stringify(pedalLog)); } catch (e) {}
   }
-  // <select> is skipped here: on iOS a tap opens a native picker, and moving
-  // focus out from under it dismisses the picker. Selects are handled by
-  // their "change" event below, which fires once the picker has closed. If
-  // the picker is dismissed without picking, the tap that dismisses it lands
-  // outside the select and restores focus through this path anyway.
-  const POINTER_UP = window.PointerEvent ? ["pointerup"] : ["mouseup", "touchend"];
-  POINTER_UP.forEach(ev => document.addEventListener(ev, e => {
-    const t = e.target;
-    if (!t || !t.closest) return;
-    if (t.tagName === "SELECT" || isTextEntry(t) || t.closest(".search-wrap")) return;
-    restorePedalFocus();
-  }, { capture: true }));
-  // deferred a tick so iOS has finished tearing the picker down before focus moves
+
+  const isPrimed = () => document.activeElement === hwKbAnchor;
+  // "nothing meaningful holds focus" - the state a tap on the score leaves
+  // behind, and the one iOS treats as "no editable session, drop the pedal keys"
+  const focusLost = () => {
+    const a = document.activeElement;
+    return !a || a === document.body || a === document.documentElement;
+  };
+
+  // After a pointer interaction, re-arm unless the user is genuinely typing.
+  // CRITICAL: this must run *after* the browser's own focus handling, not
+  // during it. On a touch device the order for one tap is
+  //   pointerdown -> pointerup -> mousedown -> focusout -> mouseup -> click
+  // so a handler on pointerup re-arms the anchor and then the compatibility
+  // mousedown blurs it straight back to <body>. That is why tapping the score
+  // itself - the most natural thing to do mid-song - silently disarmed the
+  // pedal even though tapping a *control* worked fine. Deferring by a tick
+  // puts the re-arm after the blur, where it sticks.
+  function armAfterPointer() {
+    if (!originalDoc) return;
+    if (isTextEntry(document.activeElement)) return;  // mid-sentence, leave them be
+    setTimeout(() => {
+      if (isTextEntry(document.activeElement) || isPrimed()) return;
+      primeHardwareKeyboard();
+      logPedal("re-armed after tap");
+    }, 0);
+  }
+  // <select> is skipped for pointer events: on iOS a tap opens a native picker
+  // and moving focus out from under it dismisses the picker. Selects re-arm
+  // from their "change" event instead, once the picker has closed.
+  // pointercancel/touchcancel matter as much as pointerup: when a touch turns
+  // into a scroll the browser *cancels* the gesture rather than completing it,
+  // so a swipe to nudge the music along fires no pointerup at all and the old
+  // code never re-armed afterwards.
+  ["pointerup", "pointercancel", "touchend", "touchcancel", "click"].forEach(ev =>
+    document.addEventListener(ev, e => {
+      const t = e.target;
+      if (!t || !t.closest) return;
+      if (t.tagName === "SELECT" || isTextEntry(t) || t.closest(".search-wrap")) return;
+      armAfterPointer();
+    }, { capture: true }));
   document.querySelectorAll("select").forEach(sel =>
-    sel.addEventListener("change", () => setTimeout(restorePedalFocus, 0)));
+    sel.addEventListener("change", () => setTimeout(() => {
+      if (!originalDoc || isPrimed()) return;
+      primeHardwareKeyboard();
+      logPedal("re-armed after select");
+    }, 0)));
+
+  // Cause-agnostic safety net. Whatever drops focus - a swipe, a dismissed
+  // keyboard, an OS interruption, something not yet identified - this notices
+  // within a tick and re-arms, but only when nothing meaningful holds focus,
+  // so it never steals a slider or dropdown out from under the keyboard.
+  const pedalChip = $("pedal-chip");
+  let unarmedTicks = 0;
+  setInterval(() => {
+    if (!originalDoc) { unarmedTicks = 0; pedalChip.classList.remove("show"); return; }
+    if (focusLost()) { primeHardwareKeyboard(); logPedal("watchdog re-armed"); }
+    unarmedTicks = isPrimed() ? 0 : unarmedTicks + 1;
+    // only surface the warning once auto-recovery has actually failed, so this
+    // stays a real signal rather than a flicker on every tap
+    pedalChip.classList.toggle("show", unarmedTicks >= 3);
+  }, 700);
+  pedalChip.addEventListener("click", () => {
+    primeHardwareKeyboard();
+    logPedal("re-armed by hand");
+    unarmedTicks = 0;
+    pedalChip.classList.remove("show");
+    showStatus(isPrimed() ? "Pedal re-armed" : "Could not arm the pedal — try reloading", !isPrimed());
+  });
 
   // temporary footpedal diagnostic - remove once the pedal issue is resolved
   if (location.search.includes("debug")) {
@@ -1246,6 +1319,33 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     setInterval(updateDbgStatus, 500);
     updateDbgStatus();
+    // the persisted history: what happened to the pedal across earlier
+    // sessions, including any that ended in a reload
+    const histBox = document.createElement("div");
+    histBox.style.cssText = "margin:6px 0; padding:6px 0; border-top:1px solid #333; border-bottom:1px solid #333;";
+    const renderHist = () => {
+      const fmt = r => new Date(r.t).toLocaleTimeString() + "  " + r.e + "  [active: " + r.a + "]";
+      histBox.textContent = pedalLog.length
+        ? "history (newest last):\n" + pedalLog.map(fmt).join("\n")
+        : "history: (empty)";
+      histBox.style.whiteSpace = "pre-wrap";
+    };
+    renderHist();
+    const clearHist = document.createElement("button");
+    clearHist.textContent = "clear history";
+    clearHist.style.cssText = "margin:4px 8px 4px 0; font-size:12px;";
+    clearHist.addEventListener("click", () => {
+      pedalLog.length = 0;
+      try { localStorage.removeItem(PEDAL_LOG_KEY); } catch (e) {}
+      renderHist();
+    });
+    const reloadBtn = document.createElement("button");
+    reloadBtn.textContent = "reload & re-arm";
+    reloadBtn.style.cssText = "margin:4px 0; font-size:12px;";
+    reloadBtn.addEventListener("click", () => location.reload());
+    dbgStatus.after(histBox);
+    histBox.after(clearHist, reloadBtn);
+    setInterval(renderHist, 2000);
     // capture phase, added before the scroll handler below, with no key
     // filtering at all - this logs literally every keydown that reaches
     // the page, whether or not the scroll handler below acts on it
@@ -1260,7 +1360,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && originalDoc) { keepAwake(); primeHardwareKeyboard(); }
+    if (document.visibilityState === "visible" && originalDoc) {
+      keepAwake(); primeHardwareKeyboard(); logPedal("re-armed on tab visible");
+    }
   });
 
   const stageBtn = $("stage");
@@ -1513,9 +1615,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     // #hw-kb-anchor is deliberately focused most of the time (see above) to
     // keep hardware keyboards routed in - it must NOT count as "a real text
     // field the user is typing in" for this guard
-    if ((tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") && active !== hwKbAnchor) return;
+    if ((tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") && active !== hwKbAnchor) {
+      logPedal("key ignored, focus in " + (active.id || tag));
+      return;
+    }
     e.preventDefault();
     e.stopImmediatePropagation();
+    logPedal("paged " + (isUp ? "up" : "down") + " (" + e.key + ")");
     // plain two-arg form so the CSS scroll-behavior above governs the
     // animation - iOS Safari is inconsistent about the options-object form
     window.scrollBy(0, window.innerHeight * scrollFraction * (isUp ? -1 : 1));
