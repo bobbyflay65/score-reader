@@ -306,6 +306,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 (function () {
   "use strict";
 
+  // keep this in step with CACHE_NAME in service-worker.js - it is how a bug
+  // report can say which build it came from, since a stale service worker
+  // cache is otherwise indistinguishable from a fix that did not work
+  const BUILD = "v36";
+
   const LETTERS = ["C","D","E","F","G","A","B"];
   const LSEM = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
   const MAJOR_BY_FIFTHS = ["G♭","D♭","A♭","E♭","B♭","F","C","G","D","A","E","B","F♯"];
@@ -1235,6 +1240,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     try { localStorage.setItem(PEDAL_LOG_KEY, JSON.stringify(pedalLog)); } catch (e) {}
   }
 
+  logPedal("loaded build " + BUILD);
+  // Declared here rather than beside openSong(), which reads it: the debug
+  // panel reports it too and is initialised earlier, so leaving the `let`
+  // further down put it in the temporal dead zone and made ?debug throw.
+  let keyboardUsed = false;
   const isPrimed = () => document.activeElement === hwKbAnchor;
   // "nothing meaningful holds focus" - the state a tap on the score leaves
   // behind, and the one iOS treats as "no editable session, drop the pedal keys"
@@ -1295,6 +1305,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     pedalChip.classList.toggle("show", !!originalDoc && unarmedTicks >= WARN_AFTER_TICKS);
   setInterval(() => {
     if (!originalDoc) { unarmedTicks = 0; refreshPedalChip(); return; }
+    // While a text field genuinely has focus the pedal is *supposed* to be
+    // unarmed, and it re-arms by itself the moment the field is left. Warning
+    // here was a false alarm that fired every time the search box was used -
+    // and tapping it yanked focus out of the box mid-word.
+    if (isTextEntry(document.activeElement)) { unarmedTicks = 0; refreshPedalChip(); return; }
     if (focusLost()) { primeHardwareKeyboard(); logPedal("watchdog re-armed"); }
     unarmedTicks = isPrimed() ? 0 : unarmedTicks + 1;
     refreshPedalChip();
@@ -1304,7 +1319,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     logPedal("re-armed by hand");
     unarmedTicks = 0;
     refreshPedalChip();
-    showStatus(isPrimed() ? "Pedal re-armed" : "Could not arm the pedal — try reloading", !isPrimed());
+    // Be straight about what this button can and cannot do. It restores
+    // *focus*; it cannot restore iOS's key routing once that has been lost,
+    // and saying "re-armed" in that case sends you back to the stand
+    // believing a dead pedal is fixed. The only known cure is an app switch.
+    if (!isPrimed()) showStatus("Could not arm the pedal — try reloading", true);
+    else if (keyboardUsed) showStatus("Focus restored. If the pedal still does nothing, press it in another app, then come back.");
+    else showStatus("Pedal re-armed");
   });
 
   // Opening a score is the moment right before playing, and the one moment the
@@ -1330,8 +1351,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }, 250);
   }
 
-  // temporary footpedal diagnostic - remove once the pedal issue is resolved
-  if (location.search.includes("debug")) {
+  // Footpedal diagnostic. Normally reached with ?debug, which an installed
+  // PWA has no address bar to type - and the home-screen app is exactly where
+  // the pedal trouble happens, so five quick taps on the song title opens it
+  // too. Kept as a function so both routes land in the same place.
+  let debugPanelOn = false;
+  function enableDebugPanel() {
+    if (debugPanelOn) return;
+    debugPanelOn = true;
     const dbgPanel = $("kb-debug");
     const dbgStatus = $("kb-debug-status");
     const dbgLog = $("kb-debug-log");
@@ -1339,9 +1366,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     let dbgN = 0;
     function updateDbgStatus() {
       const focused = document.activeElement === hwKbAnchor;
-      dbgStatus.textContent = "anchor focused: " + focused + " | active element: " +
+      dbgStatus.textContent = "build " + BUILD + " | anchor focused: " + focused + " | active element: " +
         (document.activeElement ? document.activeElement.tagName + "#" + document.activeElement.id : "none") +
-        " | visibility: " + document.visibilityState;
+        " | visibility: " + document.visibilityState + " | keyboard used: " + keyboardUsed;
       dbgStatus.style.color = focused ? "#7f7" : "#f77";
     }
     setInterval(updateDbgStatus, 500);
@@ -1385,6 +1412,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       updateDbgStatus();
     }, { capture: true });
   }
+  if (location.search.includes("debug")) enableDebugPanel();
+  // five taps on the song title/key block, within two seconds of each other
+  (() => {
+    const info = document.querySelector(".song-info");
+    let taps = 0, tapTimer = null;
+    info.addEventListener("click", () => {
+      taps++;
+      clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => { taps = 0; }, 2000);
+      if (taps < 5) return;
+      taps = 0;
+      enableDebugPanel();
+      showStatus("Diagnostics open — build " + BUILD);
+    });
+  })();
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && originalDoc) {
@@ -1493,7 +1535,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // straight off the list never summons the keyboard and stays instant -
   // which is what the earlier always-reload version got wrong, since it paid
   // for a full reload of a 1.3MB page on every single open.
-  let keyboardUsed = false;
+  // keyboardUsed itself is declared up in the pedal section - see the note there
   document.addEventListener("focusin", e => {
     if (!isTextEntry(e.target) || keyboardUsed) return;
     keyboardUsed = true;
