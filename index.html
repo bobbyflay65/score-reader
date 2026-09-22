@@ -999,6 +999,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     saveSong({ name: filename, title: songName, text: text, added: Date.now() });
     keepAwake();
     primeHardwareKeyboard();
+    verifyPedalArmed();
     showStatus(instChroma
       ? "Loaded “" + songName + "” — " + instName + " part, showing concert pitch"
       : "Loaded “" + songName + "”");
@@ -1286,22 +1287,48 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // within a tick and re-arms, but only when nothing meaningful holds focus,
   // so it never steals a slider or dropdown out from under the keyboard.
   const pedalChip = $("pedal-chip");
+  // only surface the warning once auto-recovery has actually failed, so it
+  // stays a real signal rather than a flicker on every tap
+  const WARN_AFTER_TICKS = 3;
   let unarmedTicks = 0;
+  const refreshPedalChip = () =>
+    pedalChip.classList.toggle("show", !!originalDoc && unarmedTicks >= WARN_AFTER_TICKS);
   setInterval(() => {
-    if (!originalDoc) { unarmedTicks = 0; pedalChip.classList.remove("show"); return; }
+    if (!originalDoc) { unarmedTicks = 0; refreshPedalChip(); return; }
     if (focusLost()) { primeHardwareKeyboard(); logPedal("watchdog re-armed"); }
     unarmedTicks = isPrimed() ? 0 : unarmedTicks + 1;
-    // only surface the warning once auto-recovery has actually failed, so this
-    // stays a real signal rather than a flicker on every tap
-    pedalChip.classList.toggle("show", unarmedTicks >= 3);
+    refreshPedalChip();
   }, 700);
   pedalChip.addEventListener("click", () => {
     primeHardwareKeyboard();
     logPedal("re-armed by hand");
     unarmedTicks = 0;
-    pedalChip.classList.remove("show");
+    refreshPedalChip();
     showStatus(isPrimed() ? "Pedal re-armed" : "Could not arm the pedal — try reloading", !isPrimed());
   });
+
+  // Opening a score is the moment right before playing, and the one moment the
+  // screen is definitely being looked at - so check there too rather than
+  // leaving it to the watchdog, which would take a couple of seconds to raise
+  // the warning and would do it once the music is already up.
+  function verifyPedalArmed() {
+    // let the tap that opened the score finish its own focus handling first:
+    // the browser blurs *after* pointerup, so checking immediately would read
+    // a state that is about to change (see armAfterPointer above)
+    setTimeout(() => {
+      if (!originalDoc) return;
+      if (!isPrimed()) primeHardwareKeyboard();   // one more attempt before warning
+      if (isPrimed()) {
+        unarmedTicks = 0;
+        logPedal("armed at score open");
+      } else {
+        // jump straight to the warning threshold instead of counting up to it
+        unarmedTicks = WARN_AFTER_TICKS;
+        logPedal("NOT armed at score open");
+      }
+      refreshPedalChip();
+    }, 250);
+  }
 
   // temporary footpedal diagnostic - remove once the pedal issue is resolved
   if (location.search.includes("debug")) {
