@@ -122,6 +122,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     box-shadow: 0 2px 10px rgba(0,0,0,0.25); z-index: 20;
   }
   #pedal-chip.show { display: flex; }
+  #recover-pedal {
+    position: fixed; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index: 100001; min-height: 44px; max-width: calc(100vw - 24px);
+    padding: 10px 14px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--card); color: var(--ink); font-size: 14px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.2);
+  }
+  @media print { #recover-pedal { display: none !important; } }
   /* stage mode: dark chrome, and the rendered score is color-inverted so
      it reads as light-on-dark in dark venues */
   body.stage { --paper: #15171a; --card: #1e2126; --ink: #e8e6e1; --muted: #9aa0a8; --border: #343941; }
@@ -301,6 +309,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <!-- shown only when the pedal has genuinely lost its keyboard routing and the
      watchdog could not get it back; tapping it re-arms by hand -->
 <button id="pedal-chip" type="button">⚠︎ Pedal not armed — tap here</button>
+<button id="recover-pedal" type="button" aria-label="Recover pedal: restart keyboard input">Recover pedal</button>
 
 <script>
 (function () {
@@ -309,7 +318,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // keep this in step with CACHE_NAME in service-worker.js - it is how a bug
   // report can say which build it came from, since a stale service worker
   // cache is otherwise indistinguishable from a fix that did not work
-  const BUILD = "v36";
+  const BUILD = "v37";
 
   const LETTERS = ["C","D","E","F","G","A","B"];
   const LSEM = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
@@ -1246,6 +1255,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // further down put it in the temporal dead zone and made ?debug throw.
   let keyboardUsed = false;
   const isPrimed = () => document.activeElement === hwKbAnchor;
+  const recoverPedalButton = $("recover-pedal");
+  let awaitingRecoveryKey = false;
+  function recoverPedalInput() {
+    // Keep blur + focus synchronous inside the user's click. A focus() call
+    // on the already-focused anchor can be a no-op; timers also lose the
+    // direct user gesture. This is an iPad recovery experiment, not a reset
+    // of Bluetooth or a guarantee that WebKit will resume delivering keys.
+    awaitingRecoveryKey = false;
+    const active = document.activeElement;
+    if (active && typeof active.blur === "function") active.blur();
+    hwKbAnchor.blur();
+    hwKbAnchor.value = "";
+    logPedal("manual recovery: input blurred");
+    primeHardwareKeyboard();
+    awaitingRecoveryKey = isPrimed();
+    recoverPedalButton.textContent = awaitingRecoveryKey
+      ? "Press pedal to test · Retry"
+      : "Focus failed · Retry";
+    logPedal("manual recovery: focus " + (awaitingRecoveryKey ? "restored; awaiting key" : "failed"));
+  }
+  recoverPedalButton.addEventListener("click", recoverPedalInput);
   // "nothing meaningful holds focus" - the state a tap on the score leaves
   // behind, and the one iOS treats as "no editable session, drop the pedal keys"
   const focusLost = () => {
@@ -1730,6 +1760,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if ((tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") && active !== hwKbAnchor) {
       logPedal("key ignored, focus in " + (active.id || tag));
       return;
+    }
+    if (awaitingRecoveryKey && e.isTrusted) {
+      awaitingRecoveryKey = false;
+      recoverPedalButton.textContent = "Input received · Recover pedal";
+      logPedal("manual recovery: trusted paging key received");
     }
     e.preventDefault();
     e.stopImmediatePropagation();
