@@ -123,7 +123,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   body.stage #dropzone { border-color: #3a3f47; }
   body.stage #dropzone.dragover { background: #20262c; }
   #stage[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
-  #library h3 { color: var(--ink); font-size: 16px; margin: 26px 0 4px; text-align: left; }
+  #library h3 { color: var(--ink); font-size: 16px; margin: 0; text-align: left; }
+  .library-head { display: flex; align-items: center; gap: 12px; margin: 26px 0 4px; }
+  .library-head h3 { flex: 1; }
+  #clear-library {
+    font-size: 12px; padding: 5px 10px; color: var(--muted);
+    background: none; border: 1px solid var(--border); border-radius: 8px;
+  }
+  #clear-library:hover { color: #a03030; border-color: #a03030; }
   .search-wrap { position: relative; margin-top: 10px; }
   #song-search {
     width: 100%; padding: 10px 34px 10px 12px;
@@ -266,7 +273,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <p>Accepts <strong>.musicxml</strong>, <strong>.xml</strong> or compressed <strong>.mxl</strong> files.<br>
   In Sibelius: <em>File &rarr; Export &rarr; MusicXML</em> to convert your .sib scores.</p>
   <div id="library" style="display:none">
-    <h3 id="library-count">Your songs</h3>
+    <div class="library-head">
+      <h3 id="library-count">Your songs</h3>
+      <button id="clear-library" type="button" title="Remove every song from the library">Clear all</button>
+    </div>
     <div class="search-wrap">
       <input type="search" id="song-search" placeholder="Search songs…" autocomplete="off">
       <button id="search-clear" type="button" aria-label="Clear search">&times;</button>
@@ -1290,27 +1300,54 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // app can't watch a live folder (iCloud or otherwise) — the OS forbids
   // it — so newly added charts come in via re-running "Add songs".
 
+  // The open connection is cached, but a cached IDBDatabase handle does not
+  // stay valid forever: iOS closes a backgrounded PWA's IndexedDB connections
+  // to reclaim resources, and another tab upgrading the database closes this
+  // one too. The handle is then dead, and every later db.transaction() throws
+  // "The database connection is closing" - which used to persist until the
+  // whole page was reloaded, because nothing ever dropped the stale handle.
+  // So: forget the handle whenever the browser tells us it closed, and retry
+  // once on the error itself, since Safari does not always fire "close".
   let dbPromise = null;
-  function getDb() {
-    if (!window.indexedDB) return Promise.reject(new Error("storage unavailable"));
-    if (!dbPromise) dbPromise = new Promise((resolve, reject) => {
+  function openDb() {
+    const p = new Promise((resolve, reject) => {
       const rq = indexedDB.open("score-reader", 1);
       rq.onupgradeneeded = () => rq.result.createObjectStore("songs", { keyPath: "name" });
-      rq.onsuccess = () => resolve(rq.result);
-      rq.onerror = () => reject(rq.error);
+      rq.onsuccess = () => {
+        const db = rq.result;
+        const forget = () => { if (dbPromise === p) dbPromise = null; };
+        db.onclose = forget;                                  // dropped by the browser
+        db.onversionchange = () => { db.close(); forget(); }; // another tab upgraded it
+        resolve(db);
+      };
+      rq.onerror = () => { if (dbPromise === p) dbPromise = null; reject(rq.error); };
     });
+    return p;
+  }
+  function getDb() {
+    if (!window.indexedDB) return Promise.reject(new Error("storage unavailable"));
+    if (!dbPromise) dbPromise = openDb();
     return dbPromise;
   }
-  function dbOp(mode, fn) {
+  // a handle that died while the app was backgrounded throws this on the very
+  // first transaction; a genuine data error (quota, constraint) does not
+  const isDeadConnection = err => !!err &&
+    (err.name === "InvalidStateError" || /connection is closing/i.test(err.message || ""));
+  function dbOp(mode, fn, retried) {
     return getDb().then(db => new Promise((resolve, reject) => {
       const rq = fn(db.transaction("songs", mode).objectStore("songs"));
       rq.onsuccess = () => resolve(rq.result);
       rq.onerror = () => reject(rq.error);
-    }));
+    })).catch(err => {
+      if (retried || !isDeadConnection(err)) throw err;
+      dbPromise = null;             // reopen from scratch, then run the op again
+      return dbOp(mode, fn, true);
+    });
   }
   const dbPut = song => dbOp("readwrite", s => s.put(song));
   const dbGet = name => dbOp("readonly", s => s.get(name));
   const dbDelete = name => dbOp("readwrite", s => s.delete(name));
+  const dbClear = () => dbOp("readwrite", s => s.clear());
   const dbAll = () => dbOp("readonly", s => s.getAll());
 
   function saveSong(song) { dbPut(song).then(refreshLibrary).catch(() => {}); }
@@ -1321,6 +1358,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     try {
       showStatus("Loading…");
       const song = await dbGet(name);
+      // the list can outlive the record - e.g. cleared or deleted in another tab
+      if (!song) { await refreshLibrary(); throw new Error("that song is no longer in the library"); }
       await loadScoreFromText(song.text, song.name);
     } catch (e) {
       showStatus("Could not open: " + e.message, true);
@@ -1368,6 +1407,25 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     renderSongList();
   }
   refreshLibrary();
+
+  // wipes the app's stored copies only - the files they were imported from are
+  // untouched, so "Add songs to library" rebuilds the whole thing
+  $("clear-library").addEventListener("click", async () => {
+    if (!allSongs.length) return;
+    const n = allSongs.length;
+    if (!confirm("Remove all " + n + " song" + (n === 1 ? "" : "s") + " from the library?\n\n" +
+                 "This clears the app's stored copies only — your original files are untouched, " +
+                 "and “Add songs to library” will bring them back.")) return;
+    try {
+      await dbClear();
+      await refreshLibrary();
+      $("song-search").value = "";
+      renderSongList();
+      showStatus("Library cleared — " + n + " song" + (n === 1 ? "" : "s") + " removed");
+    } catch (e) {
+      showStatus("Could not clear the library: " + e.message, true);
+    }
+  });
 
   $("song-search").addEventListener("input", renderSongList);
   $("search-clear").addEventListener("click", () => {
