@@ -214,6 +214,38 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     #sheet { box-shadow: none; padding: 0; border-radius: 0; background: #fff; }
     #sheet svg { filter: none !important; }
   }
+
+  /* Persistent performance toolbar; secondary settings stay out of the score. */
+  header { position: sticky; top: 0; gap: 8px 14px; padding: 8px 14px; transform: none !important; }
+  .title-line { display:flex; align-items:center; min-width:0; }
+  .song-info { min-width:0; flex:1 1 160px; }
+  .controls { gap:8px; }
+  .ctl label { display:inline; }
+  select, button { min-height:44px; }
+  #more { display:inline-block; }
+  #recover-pedal { position:static; transform:none; z-index:auto; margin:0; padding:8px 12px; box-shadow:none; min-height:44px; font-size:13px; }
+  .secondary { display:none; }
+  header.expanded .secondary { display:flex; flex-wrap:wrap; align-items:center; gap:12px 18px; width:100%; padding:12px 0; border-top:1px solid var(--border); max-height:45vh; overflow:auto; }
+  .layout-help { flex-basis:100%; color:var(--muted); font-size:12px; line-height:1.5; }
+  .pedal-status { width:100%; font-size:11px; color:var(--muted); }
+  #kb-debug { max-height:32vh !important; padding:10px !important; }
+  #kb-debug.collapsed > :not(.debug-tools) { display:none; }
+  .debug-tools { display:flex; gap:8px; flex-wrap:wrap; position:sticky; top:0; background:#111; padding-bottom:8px; }
+  .debug-tools button { min-height:44px; }
+  @media (max-width:1100px) { .song-info { flex-basis:100%; } .controls { width:100%; justify-content:flex-start; } }
+  @media (max-width:640px) {
+    header { padding:6px 8px; gap:6px; }
+    .controls { display:grid; grid-template-columns:auto 1fr auto; gap:6px; }
+    .controls .ctl { min-width:0; } .controls .ctl label { display:none; }
+    .controls select { width:100%; min-width:0; }
+    .controls .ctl:has(#zoom) { grid-column:1 / 3; grid-row:2; }
+    #more { grid-column:3; grid-row:2; }
+    #recover-pedal { font-size:12px; padding:6px 8px; }
+    input[type=range] { flex:1; min-width:60px; }
+    header.expanded .secondary { flex-direction:row; align-items:center; background:transparent; border-radius:0; }
+    header.expanded .secondary .ctl { width:100%; justify-content:space-between; }
+  }
+  @media print { #kb-debug, #pedal-chip, #recover-pedal { display:none !important; } }
 </style>
 </head>
 <body>
@@ -234,60 +266,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 </div>
 
 <header>
-  <div class="brand">Score <span>Reader</span></div>
   <div class="song-info">
-    <div style="display:flex; align-items:center; min-width:0"><div class="song-title" id="song-title">No score loaded</div><span id="app-version" aria-label="App version"></span></div>
+    <div class="title-line"><div class="song-title" id="song-title">Score Reader</div><span id="app-version" aria-label="App version"></span></div>
     <div class="song-key" id="song-key"></div>
   </div>
   <div class="controls">
-    <div class="ctl">
-      <label for="key-select">Key</label>
-      <button class="step" id="down" title="Down a semitone">♭</button>
-      <select id="key-select" disabled></select>
-      <button class="step" id="up" title="Up a semitone">♯</button>
-    </div>
-    <div class="secondary" id="secondary">
-      <div class="ctl" id="pitch-ctl" style="display:none">
-        <label for="pitch-mode">Pitch</label>
-        <select id="pitch-mode">
-          <option value="concert" selected>Concert</option>
-          <option value="written">As written</option>
-        </select>
-      </div>
-      <div class="ctl">
-        <label for="spacing">Spacing</label>
-        <select id="spacing">
-          <option value="compact">Compact</option>
-          <option value="normal" selected>Normal</option>
-          <option value="roomy">Roomy</option>
-        </select>
-      </div>
-      <div class="ctl">
-        <label for="layout">Layout</label>
-        <select id="layout">
-          <option value="grouped" selected>2–4 bars/row</option>
-          <option value="auto">Fit width</option>
-        </select>
-      </div>
-      <button id="stage" aria-pressed="false" title="Dark mode for dark venues">Stage</button>
-      <button id="print">Print</button>
-    </div>
-    <div class="ctl">
-      <label for="zoom">Zoom</label>
-      <input type="range" id="zoom" min="0.5" max="1.6" step="0.01" value="0.9">
-      <span class="zoom-pct" id="zoom-pct">90%</span>
-    </div>
-    <div class="ctl" title="How far an ArrowUp/Down footpedal press scrolls">
-      <label for="scroll-amount">Scroll</label>
-      <input type="range" id="scroll-amount" min="0.1" max="1" step="0.05" value="0.4">
-      <span class="zoom-pct" id="scroll-amount-pct">40%</span>
-    </div>
-    <button id="more" aria-expanded="false" title="More controls">⋯</button>
     <button id="library-btn">Songs</button>
-    <button class="primary" id="open">Open file</button>
-    <input type="file" id="file-input" accept=".musicxml,.xml,.mxl" hidden>
-    <input type="file" id="import-input" accept=".musicxml,.xml,.mxl" multiple hidden>
+    <div class="ctl"><label for="layout">Layout</label><select id="layout"><option value="auto">Auto</option><option value="grouped" selected>4-bar phrases</option><option value="pairs">2 bars per row</option></select></div>
+    <div class="ctl"><label for="zoom">Zoom</label><input type="range" id="zoom" min="0.5" max="1.6" step="0.01" value="0.9"><span class="zoom-pct" id="zoom-pct">90%</span></div>
+    <button id="recover-pedal" type="button" aria-label="Recover pedal: restart keyboard input">Recover pedal</button>
+    <button id="more" aria-expanded="false" aria-controls="secondary">Display</button>
   </div>
+  <div class="secondary" id="secondary">
+    <div class="ctl"><label for="key-select">Key</label><button class="step" id="down" aria-label="Down a semitone">♭</button><select id="key-select" disabled></select><button class="step" id="up" aria-label="Up a semitone">♯</button></div>
+    <div class="ctl" id="pitch-ctl" style="display:none"><label for="pitch-mode">Pitch</label><select id="pitch-mode"><option value="concert" selected>Concert</option><option value="written">As written</option></select></div>
+    <div class="ctl"><label for="spacing">Spacing</label><select id="spacing"><option value="compact">Compact</option><option value="normal" selected>Normal</option><option value="roomy">Roomy</option></select></div>
+    <div class="ctl"><label for="scroll-amount">Pedal step</label><input type="range" id="scroll-amount" min="0.1" max="1" step="0.05" value="0.4"><span id="scroll-amount-pct">40% of screen</span></div>
+    <button id="stage" aria-pressed="false">Dark mode</button><button id="diagnostics">Diagnostics</button><button id="print">Print</button><button class="primary" id="open">Open file</button>
+    <p class="layout-help">4-bar phrases keep each block together, splitting crowded blocks into 2 + 2. Marked sections start a new row. Auto lets the score fit the available width.</p>
+  </div>
+  <div class="pedal-status" id="pedal-status" role="status">No pedal input received this session.</div>
+  <input type="file" id="file-input" accept=".musicxml,.xml,.mxl" hidden><input type="file" id="import-input" accept=".musicxml,.xml,.mxl" multiple hidden>
 </header>
 
 <div id="dropzone">
@@ -314,8 +313,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <div id="status"></div>
 <!-- shown only when the pedal has genuinely lost its keyboard routing and the
      watchdog could not get it back; tapping it re-arms by hand -->
-<button id="pedal-chip" type="button">⚠︎ Pedal not armed — tap here</button>
-<button id="recover-pedal" type="button" aria-label="Recover pedal: restart keyboard input">Recover pedal</button>
+<button id="pedal-chip" type="button">Input not focused — tap to recover</button>
+
 
 <script>
 (function () {
@@ -324,7 +323,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // keep this in step with CACHE_NAME in service-worker.js - it is how a bug
   // report can say which build it came from, since a stale service worker
   // cache is otherwise indistinguishable from a fix that did not work
-  const BUILD = "v38";
+  const BUILD = "v39";
   document.getElementById("app-version").textContent = BUILD;
 
   const LETTERS = ["C","D","E","F","G","A","B"];
@@ -469,29 +468,27 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // just a count of non-rest notes per measure, summed across all parts (so
   // a busy piano LH still shortens the row even if the melody stays simple)
   function computeBarBreaks(doc, maxGroup) {
-    const parts = [...doc.querySelectorAll("part")];
+    const parts = [...doc.querySelectorAll("part")].map(p => [...p.querySelectorAll("measure")]);
     if (!parts.length) return { maxGroup, set: new Set() };
-    const measureCount = parts[0].querySelectorAll("measure").length;
-    const density = [];
-    for (let i = 0; i < measureCount; i++) {
-      let count = 0;
-      for (const part of parts) {
-        const m = part.querySelectorAll("measure")[i];
-        if (!m) continue;
-        count += [...m.querySelectorAll("note")]
-          .filter(n => ![...n.children].some(c => c.tagName === "rest")).length;
+    const measures = parts[0], breaks = new Set();
+    const attacks = i => Math.max(0, ...parts.map(ms => ms[i]
+      ? [...ms[i].querySelectorAll("note")].filter(n => !n.querySelector("rest, chord, grace")).length : 0));
+    const section = i => parts.some(ms => ms[i] && ms[i].querySelector("rehearsal"));
+    // MusicXML marks pickups as implicit (or measure 0). Keep the pickup
+    // separate, so the first full measure starts the first four-bar block.
+    let start = measures.length && (measures[0].getAttribute("implicit") === "yes" || measures[0].getAttribute("number") === "0") ? 1 : 0;
+    if (start && start < measures.length) breaks.add(start);
+    while (start < measures.length) {
+      let end = start + 1;
+      while (end < measures.length && !section(end)) end++;
+      if (start) breaks.add(start);
+      for (let i = start; i < end; i += 4) {
+        if (i) breaks.add(i);
+        const stop = Math.min(i + 4, end);
+        const crowded = maxGroup === 2 || Array.from({length:stop-i}, (_, k) => attacks(i+k)).some(n => n > 4);
+        if (crowded && i + 2 < stop) breaks.add(i + 2);
       }
-      density.push(count);
-    }
-    const DENSE = 4; // more note-attacks than this in a bar reads as "busy"
-    const breaks = new Set();
-    let i = 0;
-    while (i < measureCount) {
-      const groupSize = (maxGroup === 4 && i + 4 <= measureCount && density.slice(i, i + 4).every(c => c <= DENSE))
-        ? 4
-        : Math.min(2, measureCount - i);
-      if (i > 0) breaks.add(i);
-      i += groupSize;
+      start = end;
     }
     return { maxGroup, set: breaks };
   }
@@ -500,6 +497,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // (or zoomed way in) the renderer would wrap the group anyway, leaving a
   // lone bar stretched across the whole width — so drop to pairs instead
   function desiredMaxGroup() {
+    if ($("layout").value === "pairs") return 2;
     const w = $("sheet").clientWidth || window.innerWidth;
     return (w / parseFloat($("zoom").value)) >= 700 ? 4 : 2;
   }
@@ -533,6 +531,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // and slimmer page margins so more bars fit per line
   const isNarrow = () => window.innerWidth <= 640;
   if (isNarrow()) $("zoom").value = "0.7";
+  try {
+    const saved = JSON.parse(localStorage.getItem("displaySettings") || "{}");
+    if (["auto", "grouped", "pairs"].includes(saved.layout)) $("layout").value = saved.layout;
+    if (["compact", "normal", "roomy"].includes(saved.spacing)) $("spacing").value = saved.spacing;
+    if (typeof saved.zoom === "number" && saved.zoom >= 0.5 && saved.zoom <= 1.6) $("zoom").value = saved.zoom;
+  } catch (e) {}
+  function saveDisplaySettings() {
+    try { localStorage.setItem("displaySettings", JSON.stringify({layout:$("layout").value, spacing:$("spacing").value, zoom:parseFloat($("zoom").value)})); } catch (e) {}
+  }
+  ["layout", "spacing", "zoom"].forEach(id => $(id).addEventListener("change", saveDisplaySettings));
+
   const updateZoomPct = () => {
     $("zoom-pct").textContent = Math.round(parseFloat($("zoom").value) * 100) + "%";
   };
@@ -575,6 +584,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     // chord symbol on the same beat (common right at a segno, which often
     // opens a new system) can land right on top of it. Lift it clear.
     osmd.EngravingRules.RepetitionSymbolsYOffset = 15;
+    osmd.EngravingRules.TitleHeight = 2.4;
     applySpacing();
     return osmd;
   }
@@ -631,7 +641,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const doc = transposeDoc(originalDoc.cloneNode(true), semis);
     // once shown at concert pitch the instrument transposition no longer applies
     if (concert && instChroma) doc.querySelectorAll("transpose").forEach(el => el.remove());
-    const grouped = $("layout").value === "grouped";
+    const grouped = $("layout").value !== "auto";
     if (grouped) {
       const g = desiredMaxGroup();
       if (!barBreaks || barBreaks.maxGroup !== g) barBreaks = computeBarBreaks(originalDoc, g);
@@ -1111,10 +1121,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // until the finger pauses
   let zoomTimer = null;
   function applyZoom() {
+    saveDisplaySettings();
     if (!osmd || !originalDoc) return;
     osmd.Zoom = parseFloat($("zoom").value);
     // zooming can change how many bars fit per row; re-group if so
-    if ($("layout").value === "grouped" && desiredMaxGroup() !== lastMaxGroup) renderCurrent();
+    if ($("layout").value !== "auto" && desiredMaxGroup() !== lastMaxGroup) renderCurrent();
     else { osmd.render(); styleChordSymbols(); }
   }
   $("zoom").addEventListener("input", () => {
@@ -1183,7 +1194,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      if (originalDoc && $("layout").value === "grouped" && desiredMaxGroup() !== lastMaxGroup) renderCurrent();
+      if (originalDoc && $("layout").value !== "auto" && desiredMaxGroup() !== lastMaxGroup) renderCurrent();
     }, 250);
   });
 
@@ -1277,9 +1288,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     logPedal("manual recovery: input blurred");
     primeHardwareKeyboard();
     awaitingRecoveryKey = isPrimed();
-    recoverPedalButton.textContent = awaitingRecoveryKey
-      ? "Press pedal to test · Retry"
-      : "Focus failed · Retry";
+    $("pedal-status").textContent = awaitingRecoveryKey
+      ? "Input refocused — press a pedal to test."
+      : "Could not focus input. Tap Recover pedal to retry.";
     logPedal("manual recovery: focus " + (awaitingRecoveryKey ? "restored; awaiting key" : "failed"));
   }
   recoverPedalButton.addEventListener("click", recoverPedalInput);
@@ -1351,19 +1362,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     unarmedTicks = isPrimed() ? 0 : unarmedTicks + 1;
     refreshPedalChip();
   }, 700);
-  pedalChip.addEventListener("click", () => {
-    primeHardwareKeyboard();
-    logPedal("re-armed by hand");
-    unarmedTicks = 0;
-    refreshPedalChip();
-    // Be straight about what this button can and cannot do. It restores
-    // *focus*; it cannot restore iOS's key routing once that has been lost,
-    // and saying "re-armed" in that case sends you back to the stand
-    // believing a dead pedal is fixed. The only known cure is an app switch.
-    if (!isPrimed()) showStatus("Could not arm the pedal — try reloading", true);
-    else if (keyboardUsed) showStatus("Focus restored. If the pedal still does nothing, press it in another app, then come back.");
-    else showStatus("Pedal re-armed");
-  });
+  pedalChip.addEventListener("click", recoverPedalInput);
 
   // Opening a score is the moment right before playing, and the one moment the
   // screen is definitely being looked at - so check there too rather than
@@ -1394,12 +1393,23 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // too. Kept as a function so both routes land in the same place.
   let debugPanelOn = false;
   function enableDebugPanel() {
-    if (debugPanelOn) return;
+    if (debugPanelOn) { $("kb-debug").style.display = "block"; return; }
     debugPanelOn = true;
     const dbgPanel = $("kb-debug");
     const dbgStatus = $("kb-debug-status");
     const dbgLog = $("kb-debug-log");
     dbgPanel.style.display = "block";
+    const tools = document.createElement("div"); tools.className = "debug-tools";
+    const addTool = (text, action) => { const b = document.createElement("button"); b.textContent = text; b.type = "button"; b.addEventListener("click", action); tools.appendChild(b); return b; };
+    const collapse = addTool("Collapse", () => { const closed = dbgPanel.classList.toggle("collapsed"); collapse.textContent = closed ? "Expand" : "Collapse"; collapse.setAttribute("aria-expanded", String(!closed)); });
+    collapse.setAttribute("aria-expanded", "true");
+    addTool("Copy log", async () => {
+      const text = dbgStatus.textContent + "\n" + JSON.stringify(pedalLog, null, 2) + "\n" + dbgLog.innerText;
+      try { await navigator.clipboard.writeText(text); showStatus("Diagnostic log copied"); }
+      catch (e) { showStatus("Copy unavailable. Take a screenshot of diagnostics instead.", true); }
+    });
+    addTool("Close", () => { dbgPanel.style.display = "none"; });
+    dbgPanel.prepend(tools);
     let dbgN = 0;
     function updateDbgStatus() {
       const focused = document.activeElement === hwKbAnchor;
@@ -1449,6 +1459,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       updateDbgStatus();
     }, { capture: true });
   }
+  $("diagnostics").addEventListener("click", enableDebugPanel);
   if (location.search.includes("debug")) enableDebugPanel();
   // five taps on the song title/key block, within two seconds of each other
   (() => {
@@ -1490,10 +1501,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if (saved >= 0.1 && saved <= 1) scrollFraction = saved;
   } catch (e) {}
   scrollAmount.value = String(scrollFraction);
-  scrollAmountPct.textContent = Math.round(scrollFraction * 100) + "%";
+  scrollAmountPct.textContent = Math.round(scrollFraction * 100) + "% of screen";
   scrollAmount.addEventListener("input", () => {
     scrollFraction = parseFloat(scrollAmount.value);
-    scrollAmountPct.textContent = Math.round(scrollFraction * 100) + "%";
+    scrollAmountPct.textContent = Math.round(scrollFraction * 100) + "% of screen";
     try { localStorage.setItem("scrollFraction", String(scrollFraction)); } catch (e) {}
   });
 
@@ -1576,7 +1587,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   document.addEventListener("focusin", e => {
     if (!isTextEntry(e.target) || keyboardUsed) return;
     keyboardUsed = true;
-    logPedal("on-screen keyboard used - next open will reload");
+    logPedal("text input focused - next open will reload");
   }, { capture: true });
 
   // rewrites the query string while leaving anything else on it (?debug) alone
@@ -1759,6 +1770,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const isUp = UP_KEYS.includes(e.key);
     const isDown = DOWN_KEYS.includes(e.key);
     if (!isUp && !isDown) return;
+    if (e.isTrusted) $("pedal-status").textContent = "Last paging input: " + new Date().toLocaleTimeString() + " · " + e.key;
     const active = document.activeElement;
     const tag = active && active.tagName;
     // #hw-kb-anchor is deliberately focused most of the time (see above) to
@@ -1770,7 +1782,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     if (awaitingRecoveryKey && e.isTrusted) {
       awaitingRecoveryKey = false;
-      recoverPedalButton.textContent = "Input received · Recover pedal";
+      $("pedal-status").textContent = "Pedal input received.";
       logPedal("manual recovery: trusted paging key received");
     }
     e.preventDefault();
@@ -1778,20 +1790,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     logPedal("paged " + (isUp ? "up" : "down") + " (" + e.key + ")");
     // plain two-arg form so the CSS scroll-behavior above governs the
     // animation - iOS Safari is inconsistent about the options-object form
-    window.scrollBy(0, window.innerHeight * scrollFraction * (isUp ? -1 : 1));
+    const readingHeight = Math.max(100, window.innerHeight - document.querySelector("header").getBoundingClientRect().height);
+    window.scrollBy(0, readingHeight * scrollFraction * (isUp ? -1 : 1));
   }, { capture: true });
 
-  // hide the header while scrolling down; bring it back on scroll up
-  const hdr = document.querySelector("header");
-  let lastY = 0;
-  window.addEventListener("scroll", () => {
-    const y = window.scrollY;
-    if (y < 40) hdr.classList.remove("hidden");
-    else if (y > lastY + 5) hdr.classList.add("hidden");
-    else if (y < lastY - 5) hdr.classList.remove("hidden");
-    lastY = y;
-  }, { passive: true });
+
 })();
 </script>
 </body>
 </html>
+
