@@ -1456,7 +1456,38 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 
   let allSongs = [];
 
+  // iOS stops routing a Bluetooth pedal's keystrokes into the page once the
+  // on-screen keyboard has been used in that tab - typing a song search is
+  // the way it happens here. Nothing inside the page brings the routing back:
+  // re-focusing does not, the watchdog does not, only a fresh page load (or
+  // switching to another app that owns the pedal and back again). So remember
+  // whether anything actually summoned the keyboard, and if it did, open the
+  // next song via a real navigation instead of in place. Tapping a song
+  // straight off the list never summons the keyboard and stays instant -
+  // which is what the earlier always-reload version got wrong, since it paid
+  // for a full reload of a 1.3MB page on every single open.
+  let keyboardUsed = false;
+  document.addEventListener("focusin", e => {
+    if (!isTextEntry(e.target) || keyboardUsed) return;
+    keyboardUsed = true;
+    logPedal("on-screen keyboard used - next open will reload");
+  }, { capture: true });
+
+  // rewrites the query string while leaving anything else on it (?debug) alone
+  function urlWith(params) {
+    const u = new URL(location.href);
+    Object.entries(params).forEach(([k, v]) =>
+      v === null ? u.searchParams.delete(k) : u.searchParams.set(k, v));
+    const q = u.searchParams.toString();
+    return u.pathname + (q ? "?" + q : "") + u.hash;
+  }
+
   async function openSong(name) {
+    if (keyboardUsed) { location.href = urlWith({ open: name }); return; }
+    return openSongInPlace(name);
+  }
+
+  async function openSongInPlace(name) {
     try {
       showStatus("Loading…");
       const song = await dbGet(name);
@@ -1509,6 +1540,18 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     renderSongList();
   }
   refreshLibrary();
+
+  // arrived here from the reload handoff in openSong(): auto-open the song
+  // that was asked for, then strip the param so a manual refresh doesn't
+  // reopen it. The reload is the whole point - this page load has a fresh
+  // keyboard session, so the pedal is routed again.
+  (() => {
+    const toOpen = new URLSearchParams(location.search).get("open");
+    if (!toOpen) return;
+    history.replaceState(null, "", urlWith({ open: null }));
+    logPedal("reloaded to restore pedal routing");
+    openSongInPlace(toOpen);
+  })();
 
   // wipes the app's stored copies only - the files they were imported from are
   // untouched, so "Add songs to library" rebuilds the whole thing
