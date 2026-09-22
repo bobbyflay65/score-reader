@@ -61,6 +61,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   header.hidden { transform: translateY(-110%); }
   .brand { font-weight: 700; font-size: 15px; letter-spacing: 0.02em; }
   .brand span { color: var(--accent); }
+  #app-version {
+    display: inline-block; margin-left: 8px; padding: 2px 6px;
+    border: 1px solid var(--border); border-radius: 5px;
+    color: var(--muted); font-size: 11px; font-weight: 500;
+    vertical-align: middle; white-space: nowrap; flex-shrink: 0;
+  }
   .song-info { flex: 1; min-width: 140px; }
   .song-title { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .song-key { font-size: 12px; color: var(--muted); }
@@ -230,7 +236,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <header>
   <div class="brand">Score <span>Reader</span></div>
   <div class="song-info">
-    <div class="song-title" id="song-title">No score loaded</div>
+    <div style="display:flex; align-items:center; min-width:0"><div class="song-title" id="song-title">No score loaded</div><span id="app-version" aria-label="App version"></span></div>
     <div class="song-key" id="song-key"></div>
   </div>
   <div class="controls">
@@ -318,7 +324,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   // keep this in step with CACHE_NAME in service-worker.js - it is how a bug
   // report can say which build it came from, since a stale service worker
   // cache is otherwise indistinguishable from a fix that did not work
-  const BUILD = "v37";
+  const BUILD = "v38";
+  document.getElementById("app-version").textContent = BUILD;
 
   const LETTERS = ["C","D","E","F","G","A","B"];
   const LSEM = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
